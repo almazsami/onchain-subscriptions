@@ -42,13 +42,13 @@
 //   адресу аккаунта из `ACCOUNTS` конфигурации. Модуль сам подписывается на
 //   `change` и сам заполняет список опциями, если он пуст.
 //
-// * `#screen` — корневой контейнер экрана. Модуль проставляет ему атрибут
-//   `data-screen` с одним из пяти значений:
-//       "none"     — экран 1, записи нет
-//       "active"   — экран 2, доступ открыт
-//       "canceled" — экран 3, подписка отменена
-//       "catchup"  — экран 4, погашение долга
-//       "overdue"  — экран 5, просрочена
+// * `#app` — корневой узел страницы. Модуль проставляет ему атрибут
+//   `data-screen` с одним из пяти значений SCREEN_IDS (см. screens.js):
+//       "noSubscription" — экран 1, записи нет
+//       "accessOpen"     — экран 2, доступ открыт
+//       "canceled"       — экран 3, подписка отменена
+//       "debtCatchup"    — экран 4, погашение долга
+//       "overdue"        — экран 5, просрочена
 //   Оформление экранов — дело CSS, модуль в стили не лезет.
 //
 // * Текстовые слоты — любые элементы с атрибутом `data-field`. Модуль пишет
@@ -56,28 +56,34 @@
 //       title        заголовок экрана (из screens.js)
 //       text         пояснение экрана (из screens.js)
 //       notice       плашка «отменена, доступ до конца периода» (экран 2)
+//       hint         подсказка: экран 4 — про один период за нажатие,
+//                    экран 5 — поднять разрешение либо пополнить баланс
+//       hintLabel    подпись перед подсказкой (только экран 5)
+//       attemptText  фраза про число неудачных попыток (экран 5)
+//       attempt      число неудачных попыток подряд (экран 5)
+//       reason       причина последней неудачи словами (экран 5)
+//       reasonLabel  подпись перед причиной (экран 5)
+//       debt         N — число неоплаченных периодов (экраны 4 и 5)
 //       fact         текст факта минуты (экран 2)
+//       factTitle    заголовок факта минуты (экран 2)
 //       factIndex    индекс факта, periodsPaid mod 12
 //       account      адрес выбранного аккаунта
 //       accountRole  роль выбранного аккаунта
 //       blockTime    время последнего блока узла, читаемое
 //       paidUntil    граница оплаченного периода, читаемая
 //       periodsPaid  сколько периодов оплачено
-//       debt         N — число неоплаченных периодов (экраны 4 и 5)
-//       attempt      номер попытки, failedAttempts (экран 5)
-//       reason       причина последней неудачи словами (экран 5)
-//       hint         подсказка по причине (экран 5)
 //       status       строка результата последнего действия или ошибки
 //
 // * Видимость блоков — атрибут `data-screens` со списком экранов через пробел,
-//   например `data-screens="catchup overdue"`. Модуль ставит и снимает
+//   например `data-screens="debtCatchup overdue"`. Модуль ставит и снимает
 //   стандартный атрибут `hidden`. Элементы без `data-screens` модуль не
 //   трогает.
 //
-// * Кнопки — атрибут `data-action` со значением `subscribe`, `charge`,
-//   `cancel` или `refresh`. Модуль сам вешает обработчики, сам прячет кнопку
-//   там, где действие невозможно, и сам блокирует все кнопки на время
-//   отправки транзакции. Отдельно `data-screens` на кнопках не нужен.
+// * Кнопки — атрибут `data-action` со значением `subscribe`, `charge`
+//   или `cancel`. Модуль сам вешает обработчики, сам прячет кнопку там, где
+//   действие невозможно, сам подставляет подпись из `actionLabel` текущего
+//   экрана и сам блокирует все кнопки на время отправки транзакции.
+//   Отдельно `data-screens` на кнопках не нужен.
 //
 // ============================================================================
 // КОНТРАКТ С web/screens.js (его пишет другой шаг сборки)
@@ -87,28 +93,47 @@
 // если файла нет, витрина деградирует мягко — покажет состояние без
 // человеческих формулировок и скажет об этом в строке статуса.
 //
-// Ожидается ES-модуль с экспортами:
+// Ожидаются экспорты `SCREEN_IDS`, `SCREENS`, `FAILURE_REASONS`,
+// `ACTION_LABELS`, `ROLE_LABELS`. Форма задана в screens.js, здесь она
+// только читается:
 //
-//   export const screens = {
-//     none:     { title, text },
-//     active:   { title, text, notice },   // notice — плашка про отмену
-//     canceled: { title, text },
-//     catchup:  { title, text },
-//     overdue:  { title, text },
+//   SCREENS[id] = {
+//     id, title, text, actionLabel,
+//     // и по экранам:
+//     canceledNotice(expiresAt),  // accessOpen — плашка про отмену
+//     hint,                       // debtCatchup — про один период за нажатие
+//     attemptText(k),             // overdue — число неудачных попыток
+//     reasonLabel, hintLabel,     // overdue — подписи
 //   };
 //
-//   export const reasons = {
-//     1: { label, hint },   // не хватает разрешения
-//     2: { label, hint },   // не хватает баланса
-//   };
+//   FAILURE_REASONS[code] = { code, reason, hint };   // code: 0, 1, 2
 //
-// Значения `title`, `text`, `notice`, `label`, `hint` — либо строка, либо
-// функция от контекста. Контекст: { debt, periodsPaid, failedAttempts,
-// paidUntil, paidUntilText, lastFailureReason, now, address, role }.
-// В строках поддерживается подстановка вида `{debt}` теми же ключами.
-// Имена `SCREENS` и `REASONS` в верхнем регистре тоже принимаются.
+// Поле-строка отдается как есть, поле-функция вызывается с одним аргументом:
+// `text` — с числом периодов долга, `attemptText` — с числом попыток,
+// `canceledNotice` — с уже отформатированным временем истечения.
+//
+// Ключи экранов здесь не дублируются: SCREEN_IDS читается из того же модуля,
+// а локальная таблица SCREEN ниже сверяется с ним при загрузке.
 
 import * as cfg from "./config.js";
+
+// ============================================================================
+// Ключи экранов
+// ============================================================================
+//
+// Значения обязаны совпадать с SCREEN_IDS из screens.js. Локальная копия
+// нужна затем, что screens.js подключается динамически (мягкая деградация),
+// а решать, какой экран показывать, надо и без него. Совпадение проверяется
+// на загрузке в checkScreenIds(): расхождение видно сразу, а не через экран,
+// который молча остался пустым.
+
+const SCREEN = {
+  NO_SUBSCRIPTION: "noSubscription",
+  ACCESS_OPEN: "accessOpen",
+  CANCELED: "canceled",
+  DEBT_CATCHUP: "debtCatchup",
+  OVERDUE: "overdue",
+};
 
 // ============================================================================
 // Селекторы функций
@@ -302,20 +327,20 @@ async function readBlockTimestamp() {
 /// спецификации, и менять его нельзя.
 function pickScreen(record, hasAccess) {
   // 1. Записи нет.
-  if (!record.exists) return "none";
+  if (!record.exists) return SCREEN.NO_SUBSCRIPTION;
 
   // 2. текущее_время < paidUntil — доступ открыт. Флаг отмены в правило
   //    доступа не входит: отмена не отбирает уже оплаченный период.
-  if (hasAccess) return "active";
+  if (hasAccess) return SCREEN.ACCESS_OPEN;
 
   // 3. Подписка отменена. Долг не показывается — он сгорел вместе с отменой.
-  if (record.canceled) return "canceled";
+  if (record.canceled) return SCREEN.CANCELED;
 
   // 4. Неудачных попыток не было — это погашение долга, а не сбой.
-  if (record.failedAttempts === 0n) return "catchup";
+  if (record.failedAttempts === 0n) return SCREEN.DEBT_CATCHUP;
 
   // 5. Иначе просрочена: есть причина неудачи и номер попытки.
-  return "overdue";
+  return SCREEN.OVERDUE;
 }
 
 // ============================================================================
@@ -355,12 +380,27 @@ function factText(index) {
   return item.text || item.fact || "";
 }
 
+/// Заголовок факта. У элемента-строки заголовка нет — это не ошибка,
+/// слот просто останется пустым.
+function factTitle(index) {
+  if (!facts) return "";
+  const item = facts[index];
+  if (item == null || typeof item === "string") return "";
+  return item.title || "";
+}
+
 // ============================================================================
 // Тексты экранов
 // ============================================================================
 
-/// Таблица причин неудачи из screens.js; null, если модуль недоступен.
+/// Таблица причин неудачи (FAILURE_REASONS); null, если модуль недоступен.
 let reasonsTable = null;
+
+/// Подписи кнопок (ACTION_LABELS); null, если модуль недоступен.
+let actionLabels = null;
+
+/// Названия ролей аккаунтов (ROLE_LABELS); null, если модуль недоступен.
+let roleLabels = null;
 
 /// Подключение screens.js. Динамический импорт, а не статический, ровно ради
 /// мягкой деградации: статический импорт отсутствующего файла обрушил бы
@@ -368,44 +408,65 @@ let reasonsTable = null;
 async function loadScreens() {
   try {
     const mod = await import("./screens.js");
-    screensModule = mod.screens || mod.SCREENS || mod.default || null;
-    reasonsTable = mod.reasons || mod.REASONS || null;
+    screensModule = mod.SCREENS || null;
+    reasonsTable = mod.FAILURE_REASONS || null;
+    actionLabels = mod.ACTION_LABELS || null;
+    roleLabels = mod.ROLE_LABELS || null;
+    checkScreenIds(mod.SCREEN_IDS);
   } catch (_) {
     screensModule = null;
     reasonsTable = null;
+    actionLabels = null;
+    roleLabels = null;
   }
 }
 
-/// Разворачивание текста: функция вызывается с контекстом, строка проходит
-/// подстановку `{ключ}`.
-function resolveText(value, context) {
+/// Сверка локальных ключей экранов с SCREEN_IDS из screens.js. Словарь
+/// у трех файлов витрины один, и расхождение должно быть слышно сразу,
+/// а не оборачиваться пустым экраном без объяснений.
+function checkScreenIds(ids) {
+  if (!ids) return;
+
+  const known = new Set(Object.values(ids));
+  const missing = Object.values(SCREEN).filter((id) => !known.has(id));
+
+  if (missing.length) {
+    setStatus(`Словарь разошелся: в screens.js нет экранов ${missing.join(", ")}.`);
+  }
+}
+
+/// Поле экрана. Строка отдается как есть, функция-шаблон вызывается с одним
+/// аргументом — форму задает screens.js, здесь она только читается.
+/// Нет screens.js — пустая строка, и разметка оставляет свое значение.
+function screenField(screenId, field, arg) {
+  if (!screensModule) return "";
+
+  const entry = screensModule[screenId];
+  if (!entry) return "";
+
+  const value = entry[field];
+
   if (typeof value === "function") {
     try {
-      return String(value(context));
+      return String(value(arg));
     } catch (_) {
       return "";
     }
   }
-  if (typeof value !== "string") return "";
-  return value.replace(/\{(\w+)\}/g, (whole, key) => (key in context ? String(context[key]) : whole));
+
+  return typeof value === "string" ? value : "";
 }
 
-/// Текст экрана по имени поля. Нет screens.js — пустая строка, разметка
-/// покажет то, что в ней записано по умолчанию.
-function screenText(screenId, field, context) {
-  if (!screensModule) return "";
-  const entry = screensModule[screenId];
-  if (!entry) return "";
-  return resolveText(entry[field], context);
-}
-
-/// Причина неудачи словами и подсказка по ней (раздел 6: 1 — не хватает
-/// разрешения, 2 — не хватает баланса).
-function reasonText(code, field, context) {
+/// Причина неудачи словами (`reason`) и подсказка по ней (`hint`).
+/// Ключ — число из lastFailureReason: 1 — не хватает разрешения,
+/// 2 — не хватает баланса (раздел 6). Своего перечисления здесь нет.
+function reasonField(code, field) {
   if (!reasonsTable) return "";
+
   const entry = reasonsTable[code] || reasonsTable[String(code)];
   if (!entry) return "";
-  return resolveText(entry[field], context);
+
+  return typeof entry[field] === "string" ? entry[field] : "";
 }
 
 // ============================================================================
@@ -437,20 +498,37 @@ function applyScreenVisibility(screenId) {
 
 /// Доступность действий. Кнопка списания есть только на экранах погашения
 /// долга и просрочки: на экране открытого доступа ее нет по разделу 10.
+///
+/// Подпись видимой кнопки берется из `actionLabel` текущего экрана: на экране
+/// просрочки screens.js дает «Повторить списание», на экране долга —
+/// «Списать за период». Своих подписей здесь нет.
 function applyActions(view) {
+  const screenId = view.screen;
+
   const available = {
-    subscribe: view.screen === "none" || view.screen === "canceled",
-    charge: view.screen === "catchup" || view.screen === "overdue",
+    subscribe: screenId === SCREEN.NO_SUBSCRIPTION || screenId === SCREEN.CANCELED,
+    charge: screenId === SCREEN.DEBT_CATCHUP || screenId === SCREEN.OVERDUE,
     cancel: view.record.exists && !view.record.canceled,
-    refresh: true,
+  };
+
+  const screenAction = screenField(screenId, "actionLabel");
+
+  const labels = {
+    subscribe: screenAction,
+    charge: screenAction,
+    cancel: actionLabels ? actionLabels.cancel : "",
   };
 
   for (const node of $$("[data-action]")) {
     const action = node.getAttribute("data-action");
-    if (action in available) {
-      node.hidden = !available[action];
-      node.disabled = busy || !available[action];
-    }
+    if (!(action in available)) continue;
+
+    node.hidden = !available[action];
+    node.disabled = busy || !available[action];
+
+    // Подпись меняем только у видимой кнопки и только если текст есть:
+    // без screens.js в разметке остается ее собственная подпись.
+    if (available[action] && labels[action]) node.textContent = labels[action];
   }
 }
 
@@ -472,6 +550,14 @@ function setBusy(value) {
 
 function setStatus(text) {
   setField("status", text);
+}
+
+/// Название роли аккаунта. Берется из ROLE_LABELS в screens.js — там тексты
+/// живут в одном месте; в config.js остается роль как запасной вариант,
+/// если screens.js недоступен.
+function accountRoleLabel(account) {
+  if (roleLabels && typeof roleLabels[account.id] === "string") return roleLabels[account.id];
+  return account.role || account.id;
 }
 
 /// Время секундами эпохи в читаемый вид. Само значение — время блока узла.
@@ -502,45 +588,41 @@ function render(view) {
 
   const { record, debt, now, screen } = view;
 
-  const context = {
-    debt: debt.toString(),
-    periodsPaid: record.periodsPaid.toString(),
-    failedAttempts: record.failedAttempts.toString(),
-    lastFailureReason: record.lastFailureReason,
-    paidUntil: record.paidUntil.toString(),
-    paidUntilText: formatTime(record.paidUntil),
-    now: now.toString(),
-    address: selectedAccount.address,
-    role: selectedAccount.role,
-  };
-
-  const root = $("#screen");
+  const root = $("#app");
   if (root) root.setAttribute("data-screen", screen);
 
   applyScreenVisibility(screen);
 
   setField("account", selectedAccount.address);
-  setField("accountRole", selectedAccount.role);
+  setField("accountRole", accountRoleLabel(selectedAccount));
   setField("blockTime", formatTime(now));
   setField("periodsPaid", record.exists ? record.periodsPaid.toString() : "—");
   setField("paidUntil", record.exists ? formatTime(record.paidUntil) : "—");
 
-  setField("title", screenText(screen, "title", context));
-  setField("text", screenText(screen, "text", context));
+  // `text` на экранах долга и просрочки — функция от числа периодов долга,
+  // на остальных — обычная строка. Лишний аргумент строке не мешает.
+  setField("title", screenField(screen, "title"));
+  setField("text", screenField(screen, "text", Number(debt)));
 
   // Экран 2: доступ открыт — показываем факт минуты. Плашка про сохранение
   // доступа появляется дополнительно, если подписка отменена; факт при этом
   // все равно показывается, за период заплачено.
-  if (screen === "active") {
+  if (screen === SCREEN.ACCESS_OPEN) {
     const index = factIndex(record.periodsPaid);
     setField("factIndex", String(index));
     setField("fact", facts ? factText(index) : "");
-    setField("notice", record.canceled ? screenText("active", "notice", context) : "");
+    setField("factTitle", facts ? factTitle(index) : "");
+
+    const notice = record.canceled
+      ? screenField(SCREEN.ACCESS_OPEN, "canceledNotice", formatTime(record.paidUntil))
+      : "";
+    setField("notice", notice);
     for (const node of $$('[data-field="notice"]')) {
       node.hidden = !record.canceled;
     }
   } else {
     setField("fact", "");
+    setField("factTitle", "");
     setField("factIndex", "");
     setField("notice", "");
     for (const node of $$('[data-field="notice"]')) {
@@ -550,21 +632,36 @@ function render(view) {
 
   // Экраны 4 и 5: N берется из debtPeriods контракта, а не считается здесь.
   // Экран 3 долг не показывает — он сгорел вместе с отменой.
-  if (screen === "catchup" || screen === "overdue") {
+  if (screen === SCREEN.DEBT_CATCHUP || screen === SCREEN.OVERDUE) {
     setField("debt", debt.toString());
   } else {
     setField("debt", "");
   }
 
-  // Экран 5: причина последней неудачи и номер попытки. На экране 4 причины
-  // нет по определению — там не было ни одной неудачной попытки.
-  if (screen === "overdue") {
+  // Экран 5: причина последней неудачи и число попыток подряд. На экране 4
+  // причины нет по определению — там не было ни одной неудачной попытки,
+  // и подсказка там своя, про один период за нажатие.
+  if (screen === SCREEN.OVERDUE) {
+    const attempts = Number(record.failedAttempts);
     setField("attempt", record.failedAttempts.toString());
-    setField("reason", reasonText(record.lastFailureReason, "label", context));
-    setField("hint", reasonText(record.lastFailureReason, "hint", context));
+    setField("attemptText", screenField(SCREEN.OVERDUE, "attemptText", attempts));
+    setField("reasonLabel", screenField(SCREEN.OVERDUE, "reasonLabel"));
+    setField("reason", reasonField(record.lastFailureReason, "reason"));
+    setField("hintLabel", screenField(SCREEN.OVERDUE, "hintLabel"));
+    setField("hint", reasonField(record.lastFailureReason, "hint"));
+  } else if (screen === SCREEN.DEBT_CATCHUP) {
+    setField("attempt", "");
+    setField("attemptText", "");
+    setField("reasonLabel", "");
+    setField("reason", "");
+    setField("hintLabel", "");
+    setField("hint", screenField(SCREEN.DEBT_CATCHUP, "hint"));
   } else {
     setField("attempt", "");
+    setField("attemptText", "");
+    setField("reasonLabel", "");
     setField("reason", "");
+    setField("hintLabel", "");
     setField("hint", "");
   }
 
@@ -717,7 +814,8 @@ export async function init() {
       for (const account of cfg.ACCOUNTS) {
         const option = document.createElement("option");
         option.value = account.address;
-        option.textContent = `${account.role} — ${account.address}`;
+        option.dataset.role = account.id;
+        option.textContent = `${accountRoleLabel(account)} — ${account.address}`;
         select.appendChild(option);
       }
     }
@@ -732,11 +830,10 @@ export async function init() {
       if (action === "subscribe") subscribe();
       else if (action === "charge") charge(cfg.SUBSCRIBER_ADDRESS);
       else if (action === "cancel") cancel();
-      else if (action === "refresh") refresh();
     });
   }
 
-  // Тексты и факты — мягкая деградация, если соседние файлы еще не написаны.
+  // Тексты и факты — мягкая деградация, если соседние файлы недоступны.
   const [, loadedFacts] = await Promise.all([loadScreens(), loadFacts()]);
   facts = loadedFacts;
 

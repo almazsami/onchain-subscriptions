@@ -8,73 +8,51 @@
 <!--
   ==========================================================================
   «Минута» — витрина учебного стенда рекуррентных платежей.
-  Этот файл — только каркас: разметка и стили. Логики здесь нет,
-  обработчики пустые, состояние захардкожено одним примером
-  (экран 2 из раздела 10 SPEC.md: доступ открыт, факт показан).
+  Этот файл — разметка и стили. Логики здесь нет: состояние читает и
+  подставляет web/app.js, тексты берутся из web/screens.js.
 
-  Тексты экранов позже подставляет web/screens.js,
-  чтение контракта и транзакции — web/app.js.
-  Ниже — точки подключения, на которые эти файлы опираются.
-  Менять id и data-атрибуты без согласования с ними нельзя.
+  СЛОВАРЬ. Три файла витрины говорят на одном языке, и он задан здесь:
 
-  --- КОРЕНЬ -------------------------------------------------------------
-  #app                    корневой узел. Вид всей страницы переключается
-                          ОДНИМ классом-модификатором:
-                            .app--none      экран 1, записи нет
-                            .app--access    экран 2, доступ открыт
-                            .app--canceled  экран 3, подписка отменена
-                            .app--debt      экран 4, погашение долга
-                            .app--overdue   экран 5, просрочена
-                          Дублируется в data-screen="none|access|canceled|
-                          debt|overdue" — для чтения из JS.
-  #app[data-canceled]     "true" | "false" — флаг canceled записи.
-                          При data-canceled="true" И .app--access
-                          показывается плашка #screen-notice.
+  * Ключи экранов — из SCREEN_IDS в web/screens.js:
+      noSubscription  экран 1, записи нет
+      accessOpen      экран 2, доступ открыт
+      canceled        экран 3, подписка отменена
+      debtCatchup     экран 4, погашение долга
+      overdue         экран 5, просрочена
+    Текущий экран app.js проставляет атрибутом data-screen на #app.
+    Оформление — дело CSS ниже, JS в стили не лезет.
 
-  --- ВЫБОР АККАУНТА -----------------------------------------------------
-  #account-select         <select> из трех аккаунтов стенда. У каждого
-                          <option> есть data-role и data-address
-                          (значение option — тоже адрес).
-  #account-address        полный адрес выбранного аккаунта под списком.
+  * Адресация текстовых слотов — ТОЛЬКО data-field. Никаких id: app.js
+    пишет textContent во все узлы с нужным data-field. Слоты:
+      title        заголовок экрана
+      text         пояснение экрана
+      notice       плашка «отменена, доступ до конца периода» (экран 2)
+      hint         подсказка (экран 4 — про один период за нажатие,
+                   экран 5 — поднять разрешение либо пополнить баланс)
+      hintLabel    подпись перед подсказкой (только экран 5)
+      attemptText  фраза про число неудачных попыток (экран 5)
+      reason       причина последней неудачи словами (экран 5)
+      reasonLabel  подпись перед причиной (экран 5)
+      debt         N — число неоплаченных периодов (экраны 4 и 5)
+      fact         текст факта минуты (экран 2)
+      factTitle    заголовок факта минуты (экран 2)
+      factIndex    индекс факта, periodsPaid mod 12
+      account      адрес выбранного аккаунта
+      accountRole  роль выбранного аккаунта
+      blockTime    время последнего блока узла
+      paidUntil    граница оплаченного периода
+      periodsPaid  сколько периодов оплачено
+      status       строка результата последнего действия или ошибки
 
-  --- ЭКРАН СОСТОЯНИЯ ----------------------------------------------------
-  #screen                 контейнер экрана.
-  #screen-badge           короткая метка состояния.
-  #screen-title           заголовок экрана.
-  #screen-lead            основной текст экрана.
-  #screen-notice          плашка «подписка отменена, доступ сохраняется…»;
-                          #screen-notice-time — время истечения внутри нее.
-  #screen-hint            подсказка по причине неудачи (экран 5):
-                          поднять разрешение либо пополнить баланс.
+  * Видимость блоков — атрибут data-screens со списком экранов через
+    пробел. app.js ставит и снимает стандартный атрибут hidden.
 
-  --- ДЕЙСТВИЯ -----------------------------------------------------------
-  #btn-subscribe [data-action="subscribe"]  оформить подписку
-  #btn-charge    [data-action="charge"]     списать за один период
-  #btn-cancel    [data-action="cancel"]     отменить подписку
-                 Видимость кнопок задается классом состояния в CSS,
-                 отдельно скрывать их из JS не нужно.
-  #action-status  строка о ходе последней операции (пустая — скрыта).
+  * Кнопки — атрибут data-action: subscribe, charge, cancel. app.js сам
+    вешает обработчики, сам прячет недоступное и сам подставляет подпись
+    из actionLabel текущего экрана.
 
-  --- ФАКТ МИНУТЫ --------------------------------------------------------
-  #fact                   блок факта, смысловой центр страницы.
-  #fact-text              текст факта из data/facts.json.
-  #fact-index             номер факта (periodsPaid % 12).
-  #fact-periods           сколько периодов оплачено.
-  #fact-locked            заглушка «доступа нет»; показывается сама,
-                          когда состояние не .app--access.
-
-  --- ПОЛЯ ЗАПИСИ --------------------------------------------------------
-  #record                 карточка полей записи (скрыта на .app--none).
-  #field-paid-until       paidUntil
-  #field-periods-paid     periodsPaid
-  #field-debt-periods     debtPeriods(address), видно на .app--debt
-                          и .app--overdue
-  #field-failed-attempts  failedAttempts, видно на .app--overdue
-  #field-last-failure     lastFailureReason словами, видно на .app--overdue
-
-  --- ПОДВАЛ -------------------------------------------------------------
-  #meta-subscription      адрес контракта подписки
-  #meta-token             адрес токена стенда
+  Захардкоженное содержимое ниже — пример экрана 2 на случай, если узел
+  не поднят: витрина не должна выглядеть сломанной пустой страницей.
   ==========================================================================
 -->
 
@@ -95,7 +73,7 @@
     --neutral:     #6f6f82;
     --warn:        #c69544;
 
-    /* Цвет текущего состояния. Переопределяется модификатором на #app. */
+    /* Цвет текущего состояния. Переопределяется по data-screen на #app. */
     --state:       var(--neutral);
     --state-text:  var(--text-dim);
 
@@ -120,13 +98,19 @@
     -webkit-font-smoothing: antialiased;
   }
 
-  /* ---------- состояния экрана ---------- */
+  /* app.js прячет блоки стандартным hidden. Правило со всей силой нужно
+     потому, что hidden в таблице браузера слабее любого нашего display. */
+  [hidden] { display: none !important; }
 
-  .app--none     { --state: var(--neutral); --state-text: var(--text-dim); }
-  .app--access   { --state: var(--accent);  --state-text: var(--accent-soft); }
-  .app--canceled { --state: var(--neutral); --state-text: var(--text-dim); }
-  .app--debt     { --state: var(--warn);    --state-text: var(--warn); }
-  .app--overdue  { --state: var(--warn);    --state-text: var(--warn); }
+  /* ---------- состояния экрана ----------
+     Один акцент: фиолетовый на открытом доступе, нейтральный серый на
+     неактивном, приглушенный янтарный на долге и просрочке. */
+
+  #app[data-screen="noSubscription"] { --state: var(--neutral); --state-text: var(--text-dim); }
+  #app[data-screen="accessOpen"]     { --state: var(--accent);  --state-text: var(--accent-soft); }
+  #app[data-screen="canceled"]       { --state: var(--neutral); --state-text: var(--text-dim); }
+  #app[data-screen="debtCatchup"]    { --state: var(--warn);    --state-text: var(--warn); }
+  #app[data-screen="overdue"]        { --state: var(--warn);    --state-text: var(--warn); }
 
   /* ---------- каркас ---------- */
 
@@ -197,6 +181,11 @@
     word-break: break-all;
   }
 
+  .account__role {
+    color: var(--state-text);
+    font-family: var(--font);
+  }
+
   .layout {
     display: grid;
     gap: 22px;
@@ -216,6 +205,7 @@
 
   .screen__badge {
     display: inline-block;
+    margin: 0;
     padding: 4px 11px;
     border: 1px solid var(--state);
     border-radius: 999px;
@@ -225,6 +215,8 @@
     letter-spacing: 0.04em;
     text-transform: uppercase;
   }
+
+  .screen__badge span { font-family: var(--mono); }
 
   .screen__title {
     margin: 16px 0 0;
@@ -239,9 +231,14 @@
     color: var(--text-dim);
   }
 
+  .screen__attempt {
+    margin: 14px 0 0;
+    color: var(--warn);
+    font-size: 14px;
+  }
+
   .notice,
   .hint {
-    display: none;
     margin-top: 18px;
     padding: 13px 16px;
     border-radius: 10px;
@@ -261,8 +258,8 @@
     color: #dcb877;
   }
 
-  .app--access[data-canceled="true"] #screen-notice { display: block; }
-  .app--overdue #screen-hint { display: block; }
+  .hint__label { font-weight: 600; }
+  .hint__label:empty { display: none; }
 
   /* ---------- действия ---------- */
 
@@ -273,8 +270,10 @@
     margin-top: 24px;
   }
 
+  /* Какая кнопка живет на каком экране, решает app.js по разделу 10
+     и прячет лишние атрибутом hidden. */
   .btn {
-    display: none;
+    display: inline-block;
     padding: 11px 20px;
     border: 1px solid var(--line);
     border-radius: 10px;
@@ -307,15 +306,6 @@
     cursor: not-allowed;
   }
 
-  /* Какие кнопки живут на каком экране (раздел 10 SPEC.md). */
-  .app--none     #btn-subscribe,
-  .app--canceled #btn-subscribe { display: inline-block; }
-  .app--debt     #btn-charge,
-  .app--overdue  #btn-charge    { display: inline-block; }
-  .app--access   #btn-cancel,
-  .app--debt     #btn-cancel,
-  .app--overdue  #btn-cancel    { display: inline-block; }
-
   .action-status {
     margin: 14px 0 0;
     min-height: 1em;
@@ -336,7 +326,7 @@
       var(--surface);
   }
 
-  .app:not(.app--access) .fact {
+  #app:not([data-screen="accessOpen"]) .fact {
     background: var(--surface);
   }
 
@@ -345,6 +335,7 @@
     align-items: baseline;
     justify-content: space-between;
     gap: 16px;
+    margin: 0;
     color: var(--text-faint);
     font-size: 12px;
     letter-spacing: 0.08em;
@@ -353,11 +344,16 @@
 
   .fact__eyebrow-state { color: var(--state-text); }
 
-  .fact__body { display: none; }
-  .app--access .fact__body { display: block; }
+  .fact__title {
+    margin: 20px 0 0;
+    color: var(--state-text);
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
 
   .fact__text {
-    margin: 20px 0 0;
+    margin: 10px 0 0;
     font-size: clamp(22px, 3.1vw, 30px);
     font-weight: 500;
     line-height: 1.35;
@@ -374,19 +370,16 @@
   }
 
   .fact__locked {
-    display: block;
     margin: 18px 0 0;
     color: var(--text-faint);
     font-size: clamp(18px, 2.4vw, 22px);
     line-height: 1.4;
   }
 
-  .app--access .fact__locked { display: none; }
-
   /* ---------- поля записи ---------- */
 
   .record { padding: 22px 28px; }
-  .app--none .record { display: none; }
+  #app[data-screen="noSubscription"] .record { display: none; }
 
   .record__title {
     margin: 0 0 16px;
@@ -419,17 +412,9 @@
     word-break: break-word;
   }
 
-  .field--debt,
-  .field--failure { display: none; }
-
-  .app--debt .field--debt,
-  .app--overdue .field--debt { display: block; }
-
-  .app--overdue .field--failure { display: block; }
-
-  .app--debt .field--debt .field__value,
-  .app--overdue .field--debt .field__value,
-  .app--overdue .field--failure .field__value { color: var(--warn); }
+  #app[data-screen="debtCatchup"] .field--debt .field__value,
+  #app[data-screen="overdue"] .field--debt .field__value,
+  #app[data-screen="overdue"] .field--failure .field__value { color: var(--warn); }
 
   /* ---------- подвал ---------- */
 
@@ -454,8 +439,8 @@
 </head>
 <body>
 
-<!-- Захардкожен экран 2: доступ открыт, подписка не отменена. -->
-<div class="app app--access" id="app" data-screen="access" data-canceled="false">
+<!-- Захардкожен экран 2 (accessOpen) — вид на случай неподнятого узла. -->
+<div class="app" id="app" data-screen="accessOpen">
 
   <header class="topbar">
     <div class="brand">
@@ -474,98 +459,105 @@
                 data-role="recipient"
                 data-address="0x70997970C51812dc3A010C7d01b50e0d17dc79C8">Получатель — 0x7099…79C8</option>
         <option value="0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"
-                data-role="stranger"
+                data-role="outsider"
                 data-address="0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC">Посторонний — 0x3C44…93BC</option>
       </select>
-      <p class="account__address" id="account-address">0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266</p>
+      <p class="account__address">
+        <span class="account__role" data-field="accountRole">Подписчик</span> ·
+        <span data-field="account">0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266</span>
+      </p>
     </div>
   </header>
 
   <main class="layout">
 
-    <!-- Экран состояния: тексты подставляет screens.js -->
+    <!-- Экран состояния: тексты подставляет screens.js через app.js -->
     <section class="card screen" id="screen" aria-live="polite">
-      <span class="screen__badge" id="screen-badge">Доступ открыт</span>
-      <h2 class="screen__title" id="screen-title">Подписка активна</h2>
-      <p class="screen__lead" id="screen-lead">
-        Период оплачен до 12:41:00. До этого момента фид открыт, списание
-        откатится как преждевременное. С наступлением этого момента доступ
-        закроется, а списание за следующий период сможет вызвать любой адрес.
+      <p class="screen__badge">Время узла <span data-field="blockTime">12:41:03</span></p>
+
+      <h2 class="screen__title" data-field="title">Доступ открыт</h2>
+
+      <p class="screen__lead" data-field="text">
+        Период оплачен, фид доступен. Факт минуты меняется с каждым успешным
+        списанием.
       </p>
 
-      <p class="notice" id="screen-notice">
-        Подписка отменена, доступ сохраняется до конца оплаченного периода —
-        до <span id="screen-notice-time">12:41:00</span>. За этот период
-        заплачено, поэтому факт минуты продолжает показываться.
+      <p class="notice" data-field="notice" hidden>
+        Подписка отменена, доступ сохраняется до конца оплаченного периода.
       </p>
 
-      <p class="hint" id="screen-hint">
-        Поднимите разрешение на списание либо пополните баланс mUSDT
-        и повторите списание.
+      <p class="screen__attempt" data-screens="overdue" data-field="attemptText" hidden>
+        Подряд неудачных попыток: 1 попытка.
+      </p>
+
+      <p class="hint" data-screens="debtCatchup overdue" hidden>
+        <span class="hint__label" data-field="hintLabel"></span>
+        <span data-field="hint">Каждое нажатие закрывает ровно один период.</span>
       </p>
 
       <div class="actions">
-        <button class="btn btn--primary" id="btn-subscribe" type="button" data-action="subscribe">
+        <button class="btn btn--primary" type="button" data-action="subscribe" hidden>
           Оформить подписку
         </button>
-        <button class="btn btn--primary" id="btn-charge" type="button" data-action="charge">
+        <button class="btn btn--primary" type="button" data-action="charge" hidden>
           Списать за период
         </button>
-        <button class="btn" id="btn-cancel" type="button" data-action="cancel">
+        <button class="btn" type="button" data-action="cancel">
           Отменить подписку
         </button>
       </div>
 
-      <p class="action-status" id="action-status"></p>
+      <p class="action-status" data-field="status"></p>
     </section>
 
-    <!-- Факт минуты -->
-    <section class="card fact" id="fact">
+    <!-- Факт минуты — смысловой центр страницы -->
+    <section class="card fact">
       <p class="fact__eyebrow">
         <span>Факт минуты</span>
-        <span class="fact__eyebrow-state">период оплачен</span>
+        <span class="fact__eyebrow-state" data-field="title">Доступ открыт</span>
       </p>
 
-      <div class="fact__body">
-        <p class="fact__text" id="fact-text">
-          В pull-модели подписчик подписывает разрешение один раз,
-          а деньги уходят много раз: подпись дается на будущее,
-          и отозвать ее — единственный рычаг плательщика.
+      <div data-screens="accessOpen">
+        <p class="fact__title" data-field="factTitle">Разрешение — не перевод</p>
+        <p class="fact__text" data-field="fact">
+          Выдача разрешения не двигает ни одной монеты. Она лишь записывает
+          предел, в котором чужой контракт вправе списывать со счета.
         </p>
         <p class="fact__meta">
-          Факт <span id="fact-index">3</span> из 12 · оплачено периодов:
-          <span id="fact-periods">3</span>
+          Факт <span data-field="factIndex">3</span> из 12 · оплачено периодов:
+          <span data-field="periodsPaid">3</span>
         </p>
       </div>
 
-      <p class="fact__locked" id="fact-locked">
+      <p class="fact__locked"
+         data-screens="noSubscription canceled debtCatchup overdue" hidden>
         Оплаченный период закончился — факт минуты скрыт.
       </p>
     </section>
 
     <!-- Поля записи подписки -->
-    <section class="card record" id="record">
+    <section class="card record">
       <h2 class="record__title">Запись подписки</h2>
       <div class="record__grid">
         <div class="field">
           <p class="field__key">Оплачено до</p>
-          <p class="field__value" id="field-paid-until">12:41:00</p>
+          <p class="field__value" data-field="paidUntil">12:41:00</p>
         </div>
         <div class="field">
           <p class="field__key">Оплачено периодов</p>
-          <p class="field__value" id="field-periods-paid">3</p>
+          <p class="field__value" data-field="periodsPaid">3</p>
         </div>
-        <div class="field field--debt">
+        <div class="field field--debt" data-screens="debtCatchup overdue" hidden>
           <p class="field__key">Неоплаченных периодов</p>
-          <p class="field__value" id="field-debt-periods">0</p>
+          <p class="field__value" data-field="debt">0</p>
         </div>
-        <div class="field field--failure">
+        <div class="field field--failure" data-screens="overdue" hidden>
           <p class="field__key">Неудачных попыток подряд</p>
-          <p class="field__value" id="field-failed-attempts">0</p>
+          <p class="field__value" data-field="attempt">0</p>
         </div>
-        <div class="field field--failure">
-          <p class="field__key">Причина последней неудачи</p>
-          <p class="field__value" id="field-last-failure">нет</p>
+        <div class="field field--failure" data-screens="overdue" hidden>
+          <p class="field__key" data-field="reasonLabel">Причина последней неудачи</p>
+          <p class="field__value" data-field="reason">нет</p>
         </div>
       </div>
     </section>
@@ -575,9 +567,7 @@
   <footer class="footer">
     <p>Период — 60 секунд. Цена периода — 1 mUSDT. Списание вызывает кто угодно: это свойство pull-модели, а не сбой.</p>
     <p>
-      Подписка <code id="meta-subscription">не подключена</code> ·
-      Токен <code id="meta-token">не подключен</code> ·
-      Локальный узел, учебный стенд.
+      Локальный узел, учебный стенд. Адреса контрактов — в <code>web/config.js</code>.
     </p>
   </footer>
 
