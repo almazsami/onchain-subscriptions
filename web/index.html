@@ -1,0 +1,588 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Минута — подписной фид фактов</title>
+
+<!--
+  ==========================================================================
+  «Минута» — витрина учебного стенда рекуррентных платежей.
+  Этот файл — только каркас: разметка и стили. Логики здесь нет,
+  обработчики пустые, состояние захардкожено одним примером
+  (экран 2 из раздела 10 SPEC.md: доступ открыт, факт показан).
+
+  Тексты экранов позже подставляет web/screens.js,
+  чтение контракта и транзакции — web/app.js.
+  Ниже — точки подключения, на которые эти файлы опираются.
+  Менять id и data-атрибуты без согласования с ними нельзя.
+
+  --- КОРЕНЬ -------------------------------------------------------------
+  #app                    корневой узел. Вид всей страницы переключается
+                          ОДНИМ классом-модификатором:
+                            .app--none      экран 1, записи нет
+                            .app--access    экран 2, доступ открыт
+                            .app--canceled  экран 3, подписка отменена
+                            .app--debt      экран 4, погашение долга
+                            .app--overdue   экран 5, просрочена
+                          Дублируется в data-screen="none|access|canceled|
+                          debt|overdue" — для чтения из JS.
+  #app[data-canceled]     "true" | "false" — флаг canceled записи.
+                          При data-canceled="true" И .app--access
+                          показывается плашка #screen-notice.
+
+  --- ВЫБОР АККАУНТА -----------------------------------------------------
+  #account-select         <select> из трех аккаунтов стенда. У каждого
+                          <option> есть data-role и data-address
+                          (значение option — тоже адрес).
+  #account-address        полный адрес выбранного аккаунта под списком.
+
+  --- ЭКРАН СОСТОЯНИЯ ----------------------------------------------------
+  #screen                 контейнер экрана.
+  #screen-badge           короткая метка состояния.
+  #screen-title           заголовок экрана.
+  #screen-lead            основной текст экрана.
+  #screen-notice          плашка «подписка отменена, доступ сохраняется…»;
+                          #screen-notice-time — время истечения внутри нее.
+  #screen-hint            подсказка по причине неудачи (экран 5):
+                          поднять разрешение либо пополнить баланс.
+
+  --- ДЕЙСТВИЯ -----------------------------------------------------------
+  #btn-subscribe [data-action="subscribe"]  оформить подписку
+  #btn-charge    [data-action="charge"]     списать за один период
+  #btn-cancel    [data-action="cancel"]     отменить подписку
+                 Видимость кнопок задается классом состояния в CSS,
+                 отдельно скрывать их из JS не нужно.
+  #action-status  строка о ходе последней операции (пустая — скрыта).
+
+  --- ФАКТ МИНУТЫ --------------------------------------------------------
+  #fact                   блок факта, смысловой центр страницы.
+  #fact-text              текст факта из data/facts.json.
+  #fact-index             номер факта (periodsPaid % 12).
+  #fact-periods           сколько периодов оплачено.
+  #fact-locked            заглушка «доступа нет»; показывается сама,
+                          когда состояние не .app--access.
+
+  --- ПОЛЯ ЗАПИСИ --------------------------------------------------------
+  #record                 карточка полей записи (скрыта на .app--none).
+  #field-paid-until       paidUntil
+  #field-periods-paid     periodsPaid
+  #field-debt-periods     debtPeriods(address), видно на .app--debt
+                          и .app--overdue
+  #field-failed-attempts  failedAttempts, видно на .app--overdue
+  #field-last-failure     lastFailureReason словами, видно на .app--overdue
+
+  --- ПОДВАЛ -------------------------------------------------------------
+  #meta-subscription      адрес контракта подписки
+  #meta-token             адрес токена стенда
+  ==========================================================================
+-->
+
+<style>
+  :root {
+    --bg:          #0e0e12;
+    --surface:     #16161d;
+    --surface-2:   #1c1c25;
+    --line:        #272733;
+    --line-soft:   #20202a;
+
+    --text:        #e9e9f0;
+    --text-dim:    #a0a0b2;
+    --text-faint:  #6f6f82;
+
+    --accent:      #8b5cf6;
+    --accent-soft: #a78bfa;
+    --neutral:     #6f6f82;
+    --warn:        #c69544;
+
+    /* Цвет текущего состояния. Переопределяется модификатором на #app. */
+    --state:       var(--neutral);
+    --state-text:  var(--text-dim);
+
+    --radius:      14px;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+            "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+            "Liberation Mono", monospace;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html { -webkit-text-size-adjust: 100%; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 16px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---------- состояния экрана ---------- */
+
+  .app--none     { --state: var(--neutral); --state-text: var(--text-dim); }
+  .app--access   { --state: var(--accent);  --state-text: var(--accent-soft); }
+  .app--canceled { --state: var(--neutral); --state-text: var(--text-dim); }
+  .app--debt     { --state: var(--warn);    --state-text: var(--warn); }
+  .app--overdue  { --state: var(--warn);    --state-text: var(--warn); }
+
+  /* ---------- каркас ---------- */
+
+  .app {
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 32px 24px 56px;
+  }
+
+  .topbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 24px;
+    padding-bottom: 22px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .brand__name {
+    margin: 0;
+    font-size: 26px;
+    font-weight: 600;
+    letter-spacing: -0.015em;
+  }
+
+  .brand__tagline {
+    margin: 4px 0 0;
+    color: var(--text-faint);
+    font-size: 14px;
+  }
+
+  .account { min-width: 300px; }
+
+  .account__label {
+    display: block;
+    margin-bottom: 7px;
+    color: var(--text-faint);
+    font-size: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .account__select {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--surface-2);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 14px;
+    line-height: 1.4;
+    appearance: none;
+    cursor: pointer;
+  }
+
+  .account__select:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .account__address {
+    margin: 8px 0 0;
+    color: var(--text-faint);
+    font-family: var(--mono);
+    font-size: 12px;
+    word-break: break-all;
+  }
+
+  .layout {
+    display: grid;
+    gap: 22px;
+    margin-top: 28px;
+  }
+
+  .card {
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--surface);
+    padding: 26px 28px;
+  }
+
+  /* ---------- экран состояния ---------- */
+
+  .screen { border-left: 3px solid var(--state); }
+
+  .screen__badge {
+    display: inline-block;
+    padding: 4px 11px;
+    border: 1px solid var(--state);
+    border-radius: 999px;
+    color: var(--state-text);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .screen__title {
+    margin: 16px 0 0;
+    font-size: 21px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  .screen__lead {
+    margin: 8px 0 0;
+    max-width: 62ch;
+    color: var(--text-dim);
+  }
+
+  .notice,
+  .hint {
+    display: none;
+    margin-top: 18px;
+    padding: 13px 16px;
+    border-radius: 10px;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  .notice {
+    border: 1px solid var(--line);
+    background: var(--surface-2);
+    color: var(--text-dim);
+  }
+
+  .hint {
+    border: 1px solid rgba(198, 149, 68, 0.35);
+    background: rgba(198, 149, 68, 0.08);
+    color: #dcb877;
+  }
+
+  .app--access[data-canceled="true"] #screen-notice { display: block; }
+  .app--overdue #screen-hint { display: block; }
+
+  /* ---------- действия ---------- */
+
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 24px;
+  }
+
+  .btn {
+    display: none;
+    padding: 11px 20px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--surface-2);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.2;
+    cursor: pointer;
+  }
+
+  .btn:hover { border-color: var(--text-faint); }
+
+  .btn:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .btn--primary {
+    border-color: var(--accent);
+    background: var(--accent);
+    color: #14101f;
+  }
+
+  .btn--primary:hover { background: var(--accent-soft); border-color: var(--accent-soft); }
+
+  .btn[disabled] {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  /* Какие кнопки живут на каком экране (раздел 10 SPEC.md). */
+  .app--none     #btn-subscribe,
+  .app--canceled #btn-subscribe { display: inline-block; }
+  .app--debt     #btn-charge,
+  .app--overdue  #btn-charge    { display: inline-block; }
+  .app--access   #btn-cancel,
+  .app--debt     #btn-cancel,
+  .app--overdue  #btn-cancel    { display: inline-block; }
+
+  .action-status {
+    margin: 14px 0 0;
+    min-height: 1em;
+    color: var(--text-faint);
+    font-size: 13px;
+  }
+
+  .action-status:empty { display: none; }
+
+  /* ---------- факт минуты ---------- */
+
+  .fact {
+    position: relative;
+    padding: 34px 32px 30px;
+    border-color: var(--line-soft);
+    background:
+      linear-gradient(180deg, rgba(139, 92, 246, 0.07), rgba(139, 92, 246, 0) 62%),
+      var(--surface);
+  }
+
+  .app:not(.app--access) .fact {
+    background: var(--surface);
+  }
+
+  .fact__eyebrow {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    color: var(--text-faint);
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .fact__eyebrow-state { color: var(--state-text); }
+
+  .fact__body { display: none; }
+  .app--access .fact__body { display: block; }
+
+  .fact__text {
+    margin: 20px 0 0;
+    font-size: clamp(22px, 3.1vw, 30px);
+    font-weight: 500;
+    line-height: 1.35;
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+  }
+
+  .fact__meta {
+    margin: 22px 0 0;
+    padding-top: 16px;
+    border-top: 1px solid var(--line-soft);
+    color: var(--text-faint);
+    font-size: 13px;
+  }
+
+  .fact__locked {
+    display: block;
+    margin: 18px 0 0;
+    color: var(--text-faint);
+    font-size: clamp(18px, 2.4vw, 22px);
+    line-height: 1.4;
+  }
+
+  .app--access .fact__locked { display: none; }
+
+  /* ---------- поля записи ---------- */
+
+  .record { padding: 22px 28px; }
+  .app--none .record { display: none; }
+
+  .record__title {
+    margin: 0 0 16px;
+    color: var(--text-faint);
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .record__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 18px 24px;
+    margin: 0;
+  }
+
+  .field { min-width: 0; }
+
+  .field__key {
+    margin: 0;
+    color: var(--text-faint);
+    font-size: 12px;
+  }
+
+  .field__value {
+    margin: 3px 0 0;
+    font-family: var(--mono);
+    font-size: 15px;
+    color: var(--text);
+    word-break: break-word;
+  }
+
+  .field--debt,
+  .field--failure { display: none; }
+
+  .app--debt .field--debt,
+  .app--overdue .field--debt { display: block; }
+
+  .app--overdue .field--failure { display: block; }
+
+  .app--debt .field--debt .field__value,
+  .app--overdue .field--debt .field__value,
+  .app--overdue .field--failure .field__value { color: var(--warn); }
+
+  /* ---------- подвал ---------- */
+
+  .footer {
+    margin-top: 34px;
+    padding-top: 18px;
+    border-top: 1px solid var(--line);
+    color: var(--text-faint);
+    font-size: 12px;
+  }
+
+  .footer p { margin: 0 0 6px; }
+  .footer code { font-family: var(--mono); }
+
+  @media (max-width: 560px) {
+    .app { padding: 24px 16px 40px; }
+    .card { padding: 22px 18px; }
+    .fact { padding: 26px 18px 24px; }
+    .account { min-width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Захардкожен экран 2: доступ открыт, подписка не отменена. -->
+<div class="app app--access" id="app" data-screen="access" data-canceled="false">
+
+  <header class="topbar">
+    <div class="brand">
+      <h1 class="brand__name">Минута</h1>
+      <p class="brand__tagline">Подписной фид фактов о платежах и блокчейне</p>
+    </div>
+
+    <div class="account">
+      <label class="account__label" for="account-select">Аккаунт стенда</label>
+      <select class="account__select" id="account-select">
+        <option value="0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
+                data-role="subscriber"
+                data-address="0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
+                selected>Подписчик — 0xf39F…2266</option>
+        <option value="0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
+                data-role="recipient"
+                data-address="0x70997970C51812dc3A010C7d01b50e0d17dc79C8">Получатель — 0x7099…79C8</option>
+        <option value="0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"
+                data-role="stranger"
+                data-address="0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC">Посторонний — 0x3C44…93BC</option>
+      </select>
+      <p class="account__address" id="account-address">0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266</p>
+    </div>
+  </header>
+
+  <main class="layout">
+
+    <!-- Экран состояния: тексты подставляет screens.js -->
+    <section class="card screen" id="screen" aria-live="polite">
+      <span class="screen__badge" id="screen-badge">Доступ открыт</span>
+      <h2 class="screen__title" id="screen-title">Подписка активна</h2>
+      <p class="screen__lead" id="screen-lead">
+        Период оплачен до 12:41:00. До этого момента фид открыт, списание
+        откатится как преждевременное. С наступлением этого момента доступ
+        закроется, а списание за следующий период сможет вызвать любой адрес.
+      </p>
+
+      <p class="notice" id="screen-notice">
+        Подписка отменена, доступ сохраняется до конца оплаченного периода —
+        до <span id="screen-notice-time">12:41:00</span>. За этот период
+        заплачено, поэтому факт минуты продолжает показываться.
+      </p>
+
+      <p class="hint" id="screen-hint">
+        Поднимите разрешение на списание либо пополните баланс mUSDT
+        и повторите списание.
+      </p>
+
+      <div class="actions">
+        <button class="btn btn--primary" id="btn-subscribe" type="button" data-action="subscribe">
+          Оформить подписку
+        </button>
+        <button class="btn btn--primary" id="btn-charge" type="button" data-action="charge">
+          Списать за период
+        </button>
+        <button class="btn" id="btn-cancel" type="button" data-action="cancel">
+          Отменить подписку
+        </button>
+      </div>
+
+      <p class="action-status" id="action-status"></p>
+    </section>
+
+    <!-- Факт минуты -->
+    <section class="card fact" id="fact">
+      <p class="fact__eyebrow">
+        <span>Факт минуты</span>
+        <span class="fact__eyebrow-state">период оплачен</span>
+      </p>
+
+      <div class="fact__body">
+        <p class="fact__text" id="fact-text">
+          В pull-модели подписчик подписывает разрешение один раз,
+          а деньги уходят много раз: подпись дается на будущее,
+          и отозвать ее — единственный рычаг плательщика.
+        </p>
+        <p class="fact__meta">
+          Факт <span id="fact-index">3</span> из 12 · оплачено периодов:
+          <span id="fact-periods">3</span>
+        </p>
+      </div>
+
+      <p class="fact__locked" id="fact-locked">
+        Оплаченный период закончился — факт минуты скрыт.
+      </p>
+    </section>
+
+    <!-- Поля записи подписки -->
+    <section class="card record" id="record">
+      <h2 class="record__title">Запись подписки</h2>
+      <div class="record__grid">
+        <div class="field">
+          <p class="field__key">Оплачено до</p>
+          <p class="field__value" id="field-paid-until">12:41:00</p>
+        </div>
+        <div class="field">
+          <p class="field__key">Оплачено периодов</p>
+          <p class="field__value" id="field-periods-paid">3</p>
+        </div>
+        <div class="field field--debt">
+          <p class="field__key">Неоплаченных периодов</p>
+          <p class="field__value" id="field-debt-periods">0</p>
+        </div>
+        <div class="field field--failure">
+          <p class="field__key">Неудачных попыток подряд</p>
+          <p class="field__value" id="field-failed-attempts">0</p>
+        </div>
+        <div class="field field--failure">
+          <p class="field__key">Причина последней неудачи</p>
+          <p class="field__value" id="field-last-failure">нет</p>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="footer">
+    <p>Период — 60 секунд. Цена периода — 1 mUSDT. Списание вызывает кто угодно: это свойство pull-модели, а не сбой.</p>
+    <p>
+      Подписка <code id="meta-subscription">не подключена</code> ·
+      Токен <code id="meta-token">не подключен</code> ·
+      Локальный узел, учебный стенд.
+    </p>
+  </footer>
+
+</div>
+
+<script type="module" src="./app.js"></script>
+</body>
+</html>
