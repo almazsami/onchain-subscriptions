@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Рекуррентные платежи на цепочке</title>
+<style>
+:root{
+  --accent: {{ACCENT}};
+  --accent-ink: {{ACCENT_INK}};
+  --ink: #17171c;
+  --ink-soft: #4a4a55;
+  --ink-faint: #8a8a95;
+  --rule: #ddddE4;
+  --zebra: #f5f3fb;
+  --serif: "Charter", "Georgia", "PT Serif", serif;
+  --sans: "Avenir Next", "Helvetica Neue", "PT Sans", sans-serif;
+  --mono: "Menlo", "SF Mono", monospace;
+}
+
+/* ------------------------------------------------ страница */
+@page{
+  size: A4;
+  margin: 24mm 24mm 20mm 24mm;
+  @bottom-center{
+    content: counter(page);
+    font-family: var(--sans);
+    font-size: 8.5pt;
+    color: var(--ink-faint);
+    padding-top: 6mm;
+  }
+}
+@page title{
+  margin: 24mm;
+  @bottom-center{ content: none; }
+}
+
+html{ font-size: 11.5pt; }
+body{
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 11.5pt;
+  line-height: 1.65;
+  color: var(--ink);
+  hyphens: auto;
+  text-wrap: pretty;
+}
+
+/* ------------------------------------------------ титул */
+.titlepage{
+  page: title;
+  break-after: page;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.titlepage .rule{
+  width: 46mm; height: 3pt;
+  background: var(--accent);
+  margin-bottom: 12mm;
+}
+.titlepage h1{
+  font-family: var(--sans);
+  font-size: 30pt;
+  line-height: 1.16;
+  font-weight: 600;
+  letter-spacing: -0.4pt;
+  margin: 0 0 6mm;
+  max-width: 150mm;
+}
+.titlepage .sub{
+  font-family: var(--serif);
+  font-size: 14pt;
+  line-height: 1.4;
+  color: var(--ink-soft);
+  margin: 0;
+  max-width: 130mm;
+}
+.titlepage .spacer{ flex: 1; }
+.titlepage .meta{
+  font-family: var(--sans);
+  font-size: 10pt;
+  color: var(--ink-soft);
+  border-top: 1px solid var(--rule);
+  padding-top: 5mm;
+  display: flex;
+  justify-content: space-between;
+}
+.titlepage .meta .who{ color: var(--ink); font-weight: 500; }
+
+/* ------------------------------------------------ оглавление */
+.toc{ break-after: page; }
+.toc h2{
+  font-family: var(--sans);
+  font-size: 13pt;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0 0 7mm;
+  padding-bottom: 2.5mm;
+  border-bottom: 2px solid var(--accent);
+}
+.toc ol{ list-style: none; margin: 0; padding: 0; }
+.toc li{ margin: 0 0 3.4mm; }
+.toc a{
+  display: flex;
+  align-items: baseline;
+  text-decoration: none;
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 10.5pt;
+}
+.toc a::before{
+  content: "";
+  order: 2;
+  flex: 1;
+  margin: 0 3mm;
+  border-bottom: 1px dotted #c3c3ce;
+  transform: translateY(-1pt);
+}
+.toc a::after{
+  content: target-counter(attr(href), page);
+  order: 3;
+  color: var(--accent-ink);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+/* второй проход: номера измерены по готовому PDF и проставлены явно —
+   target-counter вычисляется до того, как правила переносов сдвинут раздел */
+.toc--fixed a::after{ content: attr(data-page); }
+.toc .t{ order: 1; }
+
+/* ------------------------------------------------ текст */
+.lead{
+  color: var(--ink-soft);
+  font-size: 11pt;
+  border-left: 2.5pt solid var(--accent);
+  padding-left: 5mm;
+  margin-bottom: 8mm;
+}
+.lead p{ margin: 0 0 2mm; }
+
+.sect{ margin-bottom: 7mm; }
+h2{
+  font-family: var(--sans);
+  font-size: 15.5pt;
+  font-weight: 600;
+  letter-spacing: -0.2pt;
+  color: var(--accent);
+  margin: 0 0 4mm;
+  padding-bottom: 2mm;
+  border-bottom: 1px solid var(--rule);
+  break-after: avoid;
+  break-inside: avoid;
+}
+.sect--first{ break-before: avoid; }
+/* заголовок не остаётся один в конце полосы: цепочка h2 -> вводный абзац -> таблица */
+h2 + p{ break-after: avoid; }
+p.grp{
+  font-family: var(--sans);
+  font-size: 10pt;
+  font-weight: 600;
+  color: var(--accent-ink);
+  margin: 4mm 0 2mm;
+  break-after: avoid;
+}
+p.grp strong{ font-weight: 600; }
+p.grp strong.num{ color: inherit; }
+p{ margin: 0 0 3.6mm; orphans: 3; widows: 3; }
+/* выключка по формату — переносы включены, рваный край на длинной строке мешает */
+.sect > p, .sect > ol > li, .lead p{ text-align: justify; }
+.sect > p.note, .sect > p.grp{ text-align: left; }
+strong{ font-weight: 700; }
+strong.num{ color: var(--accent-ink); font-weight: 700; }
+em{ font-style: italic; }
+a{ color: var(--accent-ink); text-decoration: none; }
+code{
+  font-family: var(--mono);
+  font-size: 0.86em;
+  background: #f2f2f6;
+  padding: 0.4pt 1.6pt;
+  border-radius: 2pt;
+}
+
+ol, ul{ margin: 0 0 4mm; padding-left: 6.5mm; }
+li{ margin-bottom: 2.2mm; orphans: 2; widows: 2; }
+ol{ list-style: decimal; }
+ul{ list-style: none; padding-left: 4.5mm; }
+ul li{ position: relative; }
+ul li::before{
+  content: "";
+  position: absolute;
+  left: -4.5mm; top: 0.58em;
+  width: 2.2pt; height: 2.2pt;
+  background: var(--accent);
+}
+ul.src li{ font-family: var(--sans); font-size: 9pt; line-height: 1.5; margin-bottom: 1.8mm; }
+ul.src a{ word-break: break-all; color: var(--accent-ink); }
+
+p.note{
+  font-family: var(--sans);
+  font-size: 9.5pt;
+  font-style: normal;
+  color: var(--ink-faint);
+  border-top: 1px solid var(--rule);
+  padding-top: 2mm;
+  margin-top: 1mm;
+}
+p.note em{ font-style: normal; }
+p.callout{
+  background: var(--zebra);
+  padding: 4mm 5mm;
+  margin-bottom: 4mm;
+  break-inside: avoid;
+}
+
+/* ------------------------------------------------ таблицы */
+table{
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 5mm;
+  font-family: var(--sans);
+  font-size: 9.4pt;
+  line-height: 1.42;
+}
+thead{ display: table-header-group; break-after: avoid; }
+th{
+  text-align: left;
+  font-weight: 600;
+  font-size: 8.4pt;
+  letter-spacing: 0.3pt;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  border-bottom: 1.4pt solid var(--accent);
+  padding: 0 5pt 3pt;
+  vertical-align: bottom;
+}
+td{
+  padding: 3.6pt 5pt;
+  vertical-align: top;
+  border: none;
+}
+tbody tr{ break-inside: avoid; page-break-inside: avoid; }
+tbody tr:first-child{ break-before: avoid; }
+tbody tr:nth-child(odd){ background: var(--zebra); }
+td strong{ font-weight: 600; }
+table code{ background: none; padding: 0; font-size: 0.9em; }
+
+.tbl--wide{ font-size: 8.6pt; }
+.tbl--wide td{ padding: 3pt 4pt; }
+.tbl--matrix{ font-size: 8.9pt; }
+.tbl--matrix td:first-child{ width: 17%; }
+.tbl--matrix td:nth-child(2){ width: 30%; }
+.tbl--matrix td:nth-child(3){ width: 53%; }
+/* короткая таблица — целиком на одной полосе, чтобы шапка не осталась одна */
+.tbl--stand{ break-inside: avoid; }
+.tbl--stand td:first-child{ width: 38%; }
+.tbl--stand td:nth-child(2){ width: 47%; }
+.tbl--stand td:nth-child(3){ width: 15%; white-space: nowrap; }
+
+/* ------------------------------------------------ рисунки */
+.shot{
+  margin: 0 0 7mm;
+  break-inside: avoid;
+}
+.shot img{
+  display: block;
+  max-height: 108mm;      /* чтобы рис. 1 умещался на полосе с текстом раздела */
+  max-width: 100%;
+  width: auto;
+  border: 1px solid var(--rule);
+}
+.shot figcaption{
+  font-family: var(--sans);
+  font-size: 9.2pt;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  margin-top: 2.5mm;
+  padding-left: 3mm;
+  border-left: 2pt solid var(--accent);
+}
+.shot .fignum{ color: var(--accent-ink); font-weight: 600; }
+.shot b{ color: var(--ink); font-weight: 600; }
+</style>
+</head>
+<body>
+
+<div class="titlepage">
+  <div class="rule"></div>
+  <h1>Рекуррентные платежи на цепочке</h1>
+  <p class="sub">Исследование и работающий стенд</p>
+  <div class="spacer"></div>
+  <div class="meta">
+    <span class="who">{{AUTHOR}}</span>
+    <span>{{DATE}}</span>
+  </div>
+</div>
+
+<nav class="{{TOCCLASS}}">
+  <h2>Содержание</h2>
+  <ol>{{TOC}}</ol>
+</nav>
+
+{{BODY}}
+{{STAND}}
+
+<script src="vendor/paged.polyfill.min.js"></script>
+</body>
+</html>

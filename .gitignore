@@ -12,7 +12,12 @@ out/
 /broadcast/**/dry-run/
 
 # Docs
-docs/
+# Собранный отчет сдается вместе с репозиторием, поэтому docs/ целиком
+# не игнорируется. Исключаем только то, что пересобирается локально.
+node_modules/
+docs/.build/
+docs/*.tmp
+*.log
 
 # Dotenv file
 .env
