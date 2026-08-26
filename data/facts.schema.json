@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/minuta/facts.schema.json",
+  "title": "Факты минуты",
+  "description": "Фиксированный список из 12 фактов витрины стенда «Минута». Порядок значим: индекс факта — остаток от деления periodsPaid на 12, поэтому элементов ровно 12 и поле id совпадает с позицией в массиве.",
+  "type": "array",
+  "minItems": 12,
+  "maxItems": 12,
+  "uniqueItems": true,
+  "items": {
+    "type": "object",
+    "required": ["id", "title", "text"],
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "description": "Индекс факта, он же остаток от деления periodsPaid на 12.",
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 11
+      },
+      "title": {
+        "description": "Короткий заголовок факта.",
+        "type": "string",
+        "minLength": 3,
+        "maxLength": 60
+      },
+      "text": {
+        "description": "Текст факта: механика платежей, подписок и блокчейна.",
+        "type": "string",
+        "minLength": 40,
+        "maxLength": 400
+      }
+    }
+  }
+}
