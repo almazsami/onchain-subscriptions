@@ -73,6 +73,7 @@
 //       paidUntil    граница оплаченного периода, читаемая
 //       periodsPaid  сколько периодов оплачено
 //       status       строка результата последнего действия или ошибки
+//       actionNote   почему часть действий недоступна выбранному аккаунту
 //
 // * Видимость блоков — атрибут `data-screens` со списком экранов через пробел,
 //   например `data-screens="debtCatchup overdue"`. Модуль ставит и снимает
@@ -80,10 +81,13 @@
 //   трогает.
 //
 // * Кнопки — атрибут `data-action` со значением `subscribe`, `charge`
-//   или `cancel`. Модуль сам вешает обработчики, сам прячет кнопку там, где
-//   действие невозможно, сам подставляет подпись из `actionLabel` текущего
-//   экрана и сам блокирует все кнопки на время отправки транзакции.
-//   Отдельно `data-screens` на кнопках не нужен.
+//   или `cancel`. Модуль сам вешает обработчики, сам подставляет подпись
+//   из `actionLabel` текущего экрана и сам блокирует все кнопки на время
+//   отправки транзакции. Отдельно `data-screens` на кнопках не нужен.
+//
+//   Видимость и активность у кнопок разные: `hidden` снимается по правилу
+//   экрана раздела 10, `disabled` — по выбранному аккаунту. Оформление
+//   и отмена доступны только подписчику, списание — всем трем аккаунтам.
 //
 // ============================================================================
 // КОНТРАКТ С web/screens.js (его пишет другой шаг сборки)
@@ -107,6 +111,8 @@
 //   };
 //
 //   FAILURE_REASONS[code] = { code, reason, hint };   // code: 0, 1, 2
+//   ACTION_NOTES = { otherAccount };                  // строка-пояснение
+//   REVERT_REASONS = { <ключ>: строка, unknown(raw) };
 //
 // Поле-строка отдается как есть, поле-функция вызывается с одним аргументом:
 // `text` — с числом периодов долга, `attemptText` — с числом попыток,
@@ -154,6 +160,26 @@ const SEL_HAS_ACCESS = "0x95a078e8"; // hasAccess(address)
 /// revert из ответа узла.
 const SEL_ERROR_STRING = "0x08c379a0";
 
+/// Ошибки токена. Перевод внутри `subscribe` идет через SafeERC20, и нехватка
+/// денег приходит не строкой, а типизированной ошибкой OpenZeppelin — свой
+/// селектор у каждой. Считаны так же заранее:
+///     cast sig "ERC20InsufficientBalance(address,uint256,uint256)"
+const SEL_ERC20_INSUFFICIENT_BALANCE = "0xe450d38c";
+const SEL_ERC20_INSUFFICIENT_ALLOWANCE = "0xfb8f41b2";
+
+/// Строки из `require` контракта — ключи в REVERT_REASONS (web/screens.js).
+/// Слева ровно то, что написано в src/Subscription.sol; справа — ключ,
+/// по которому screens.js отдает человеческий текст. Своих формулировок
+/// здесь нет: технической строке на витрине не место.
+const REVERT_KEYS = {
+  "allowance below period price": "allowanceTooLow",
+  "period not due yet": "notDueYet",
+  "subscription already active": "alreadySubscribed",
+  "no subscription": "noSubscription",
+  "subscription canceled": "subscriptionCanceled",
+  "subscription already canceled": "subscriptionCanceled",
+};
+
 // ============================================================================
 // Состояние модуля
 // ============================================================================
@@ -199,22 +225,39 @@ async function rpc(method, params = []) {
   const body = await response.json();
 
   if (body.error) {
-    const err = new Error(rpcErrorText(body.error));
+    const raw = revertRaw(body.error);
+    const err = new Error(raw || (body.error && body.error.message) || "неизвестная ошибка узла");
     err.rpcError = body.error;
+    err.revertRaw = raw;
+    err.revertKey = raw ? REVERT_KEYS[raw] || null : revertKeyFromSelector(body.error);
     throw err;
   }
 
   return body.result;
 }
 
-/// Текст ошибки узла. Если в ошибке лежат данные revert — достает строку
-/// причины, ту самую, что написана в require контракта.
-function rpcErrorText(error) {
+/// Данные revert из ответа узла: они лежат либо прямо в `data`, либо
+/// вложенным полем — зависит от того, как узел завернул ошибку.
+function revertData(error) {
   const raw = error && error.data;
-  const data = typeof raw === "string" ? raw : raw && raw.data;
-  const revert = decodeRevertReason(data);
-  if (revert) return revert;
-  return (error && error.message) || "неизвестная ошибка узла";
+  return typeof raw === "string" ? raw : raw && raw.data;
+}
+
+/// Строка из `require`, если контракт откатился именно строкой.
+function revertRaw(error) {
+  return decodeRevertReason(revertData(error));
+}
+
+/// Ключ причины для ошибок, у которых текста нет вовсе: типизированные
+/// ошибки токена узнаются по селектору.
+function revertKeyFromSelector(error) {
+  const data = revertData(error);
+  if (typeof data !== "string") return null;
+
+  if (data.startsWith(SEL_ERC20_INSUFFICIENT_BALANCE)) return "balanceTooLow";
+  if (data.startsWith(SEL_ERC20_INSUFFICIENT_ALLOWANCE)) return "allowanceTooLow";
+
+  return null;
 }
 
 /// Разбор данных ошибки Error(string): селектор, смещение, длина, байты строки.
@@ -402,6 +445,12 @@ let actionLabels = null;
 /// Названия ролей аккаунтов (ROLE_LABELS); null, если модуль недоступен.
 let roleLabels = null;
 
+/// Пояснения к недоступным действиям (ACTION_NOTES).
+let actionNotes = null;
+
+/// Откаты контракта человеческим текстом (REVERT_REASONS).
+let revertReasons = null;
+
 /// Подключение screens.js. Динамический импорт, а не статический, ровно ради
 /// мягкой деградации: статический импорт отсутствующего файла обрушил бы
 /// весь модуль целиком.
@@ -412,12 +461,16 @@ async function loadScreens() {
     reasonsTable = mod.FAILURE_REASONS || null;
     actionLabels = mod.ACTION_LABELS || null;
     roleLabels = mod.ROLE_LABELS || null;
+    actionNotes = mod.ACTION_NOTES || null;
+    revertReasons = mod.REVERT_REASONS || null;
     checkScreenIds(mod.SCREEN_IDS);
   } catch (_) {
     screensModule = null;
     reasonsTable = null;
     actionLabels = null;
     roleLabels = null;
+    actionNotes = null;
+    revertReasons = null;
   }
 }
 
@@ -455,6 +508,31 @@ function screenField(screenId, field, arg) {
   }
 
   return typeof value === "string" ? value : "";
+}
+
+/// Откат контракта человеческим текстом. Ключ разобран в `rpc()`, текст
+/// живет в screens.js. Неизвестная причина показывается как есть, но с
+/// пометкой: необработанный случай должно быть видно, а не выдавать
+/// за обычное сообщение витрины.
+function revertText(error) {
+  const raw = (error && error.revertRaw) || (error && error.message) || "";
+
+  if (!revertReasons) return raw;
+
+  const key = error && error.revertKey;
+  const known = key && revertReasons[key];
+  if (typeof known === "string") return known;
+
+  const unknown = revertReasons.unknown;
+  if (typeof unknown === "function") {
+    try {
+      return String(unknown(raw));
+    } catch (_) {
+      return raw;
+    }
+  }
+
+  return raw;
 }
 
 /// Причина неудачи словами (`reason`) и подсказка по ней (`hint`).
@@ -504,11 +582,30 @@ function applyScreenVisibility(screenId) {
 /// «Списать за период». Своих подписей здесь нет.
 function applyActions(view) {
   const screenId = view.screen;
+  const bySubscriber = isSubscriberSelected();
 
-  const available = {
+  // Видно ли действие на этом экране — правило раздела 10.
+  const visible = {
     subscribe: screenId === SCREEN.NO_SUBSCRIPTION || screenId === SCREEN.CANCELED,
     charge: screenId === SCREEN.DEBT_CATCHUP || screenId === SCREEN.OVERDUE,
     cancel: view.record.exists && !view.record.canceled,
+  };
+
+  // Доступно ли оно выбранному аккаунту.
+  //
+  // Оформление — только подписчику: баланс и разрешение стенд выдает
+  // ему одному (раздел 11), у остальных вызов гарантированно откатился бы
+  // на проверке разрешения. Отмена — тоже только ему: отменить подписку
+  // может лишь сам подписчик (о. 36).
+  //
+  // Списание доступно ВСЕМ ТРЕМ аккаунтам, и это не оплошность. Вызвать
+  // списание может кто угодно (о. 12) — свойство pull-модели, ради показа
+  // которого посторонний адрес в стенде и заведен. Сузить здесь до
+  // подписчика значило бы спрятать главное.
+  const enabled = {
+    subscribe: visible.subscribe && bySubscriber,
+    charge: visible.charge,
+    cancel: visible.cancel && bySubscriber,
   };
 
   const screenAction = screenField(screenId, "actionLabel");
@@ -521,15 +618,25 @@ function applyActions(view) {
 
   for (const node of $$("[data-action]")) {
     const action = node.getAttribute("data-action");
-    if (!(action in available)) continue;
+    if (!(action in visible)) continue;
 
-    node.hidden = !available[action];
-    node.disabled = busy || !available[action];
+    node.hidden = !visible[action];
+    node.disabled = busy || !enabled[action];
 
     // Подпись меняем только у видимой кнопки и только если текст есть:
     // без screens.js в разметке остается ее собственная подпись.
-    if (available[action] && labels[action]) node.textContent = labels[action];
+    if (visible[action] && labels[action]) node.textContent = labels[action];
   }
+
+  // Строка рядом с кнопками: почему часть действий недоступна этому
+  // аккаунту и зачем остальные аккаунты вообще нужны.
+  const blocked = (visible.subscribe && !enabled.subscribe) || (visible.cancel && !enabled.cancel);
+  setField("actionNote", blocked && actionNotes ? actionNotes.otherAccount : "");
+}
+
+/// Выбран ли аккаунт подписчика. Оформление и отмена доступны только ему.
+function isSubscriberSelected() {
+  return selectedAccount.address.toLowerCase() === cfg.SUBSCRIBER_ADDRESS.toLowerCase();
 }
 
 /// Блокировка кнопок на время отправки транзакции.
@@ -693,7 +800,7 @@ async function sendCall(data, label) {
     await ethCall(cfg.SUBSCRIPTION_ADDRESS, data, from);
   } catch (error) {
     setBusy(false);
-    setStatus(`${label}: вызов не проходит — ${error.message}`);
+    setStatus(`${label} не проходит. ${revertText(error)}`);
     return null;
   }
 
@@ -714,7 +821,7 @@ async function sendCall(data, label) {
 
     return receipt;
   } catch (error) {
-    setStatus(`${label}: ошибка — ${error.message}`);
+    setStatus(`${label} не прошло. ${revertText(error)}`);
     return null;
   } finally {
     setBusy(false);

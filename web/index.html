@@ -43,13 +43,17 @@
       paidUntil    граница оплаченного периода
       periodsPaid  сколько периодов оплачено
       status       строка результата последнего действия или ошибки
+      actionNote   почему часть действий недоступна выбранному аккаунту
 
   * Видимость блоков — атрибут data-screens со списком экранов через
     пробел. app.js ставит и снимает стандартный атрибут hidden.
 
   * Кнопки — атрибут data-action: subscribe, charge, cancel. app.js сам
-    вешает обработчики, сам прячет недоступное и сам подставляет подпись
-    из actionLabel текущего экрана.
+    вешает обработчики, сам подставляет подпись из actionLabel текущего
+    экрана и сам решает, что показать и что погасить. Видимость (hidden)
+    задается экраном раздела 10, активность (disabled) — выбранным
+    аккаунтом: оформление и отмена только от подписчика, списание —
+    от любого из трех аккаунтов.
 
   Захардкоженное содержимое ниже — пример экрана 2 на случай, если узел
   не поднят: витрина не должна выглядеть сломанной пустой страницей.
@@ -301,9 +305,19 @@
 
   .btn--primary:hover { background: var(--accent-soft); border-color: var(--accent-soft); }
 
+  /* Погашенная кнопка остается видимой: пользователь должен видеть, что
+     действие есть, но этому аккаунту недоступно — рядом объясняет почему
+     строка .action-note. */
   .btn[disabled] {
-    opacity: 0.45;
+    opacity: 0.4;
     cursor: not-allowed;
+  }
+
+  .btn--primary[disabled],
+  .btn--primary[disabled]:hover {
+    border-color: var(--line);
+    background: var(--surface-2);
+    color: var(--text-dim);
   }
 
   .action-status {
@@ -314,6 +328,17 @@
   }
 
   .action-status:empty { display: none; }
+
+  /* Почему часть действий недоступна выбранному аккаунту. */
+  .action-note {
+    margin: 14px 0 0;
+    max-width: 62ch;
+    color: var(--text-dim);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  .action-note:empty { display: none; }
 
   /* ---------- факт минуты ---------- */
 
@@ -506,6 +531,8 @@
           Отменить подписку
         </button>
       </div>
+
+      <p class="action-note" data-field="actionNote"></p>
 
       <p class="action-status" data-field="status"></p>
     </section>
