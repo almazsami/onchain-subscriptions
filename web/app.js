@@ -156,6 +156,12 @@ const SEL_SUBSCRIPTIONS = "0xf046395a"; // subscriptions(address) — авто-�
 const SEL_DEBT_PERIODS = "0x5294106b"; // debtPeriods(address)
 const SEL_HAS_ACCESS = "0x95a078e8"; // hasAccess(address)
 
+// Токен стенда. Нужны для блока токена подписчика (о. 63): баланс,
+// разрешение и его поднятие фиксированной величиной.
+const SEL_BALANCE_OF = "0x70a08231"; // balanceOf(address)
+const SEL_ALLOWANCE = "0xdd62ed3e"; // allowance(address,address)
+const SEL_APPROVE = "0x095ea7b3"; // approve(address,uint256)
+
 /// Селектор стандартной ошибки Error(string) — нужен, чтобы прочитать текст
 /// revert из ответа узла.
 const SEL_ERROR_STRING = "0x08c379a0";
@@ -345,6 +351,20 @@ async function readDebtPeriods(subscriber) {
   return wordToBigInt(hexWords(raw)[0] || "0".repeat(64));
 }
 
+/// Баланс подписчика в базовых единицах токена.
+async function readBalance(owner) {
+  const raw = await ethCall(cfg.MOCK_USDT_ADDRESS, callData(SEL_BALANCE_OF, owner));
+  return wordToBigInt(hexWords(raw)[0] || "0".repeat(64));
+}
+
+/// Сколько подписчик разрешил списывать контракту подписки. Величина,
+/// расхождение которой с балансом и есть содержание сценария о. 57.
+async function readAllowance(owner) {
+  const data = SEL_ALLOWANCE + encodeAddress(owner) + encodeAddress(cfg.SUBSCRIPTION_ADDRESS);
+  const raw = await ethCall(cfg.MOCK_USDT_ADDRESS, data);
+  return wordToBigInt(hexWords(raw)[0] || "0".repeat(64));
+}
+
 /// Доступ к фиду по правилу контракта: текущее_время < paidUntil.
 async function readHasAccess(subscriber) {
   const raw = await ethCall(cfg.SUBSCRIPTION_ADDRESS, callData(SEL_HAS_ACCESS, subscriber));
@@ -451,6 +471,9 @@ let actionNotes = null;
 /// Откаты контракта человеческим текстом (REVERT_REASONS).
 let revertReasons = null;
 
+/// Тексты блока токена подписчика (TOKEN_BLOCK).
+let tokenBlock = null;
+
 /// Подключение screens.js. Динамический импорт, а не статический, ровно ради
 /// мягкой деградации: статический импорт отсутствующего файла обрушил бы
 /// весь модуль целиком.
@@ -463,6 +486,7 @@ async function loadScreens() {
     roleLabels = mod.ROLE_LABELS || null;
     actionNotes = mod.ACTION_NOTES || null;
     revertReasons = mod.REVERT_REASONS || null;
+    tokenBlock = mod.TOKEN_BLOCK || null;
     checkScreenIds(mod.SCREEN_IDS);
   } catch (_) {
     screensModule = null;
@@ -471,6 +495,7 @@ async function loadScreens() {
     roleLabels = null;
     actionNotes = null;
     revertReasons = null;
+    tokenBlock = null;
   }
 }
 
@@ -533,6 +558,24 @@ function revertText(error) {
   }
 
   return raw;
+}
+
+/// Поле блока токена: строка отдается как есть, функция вызывается
+/// с переданными аргументами. Форму задает TOKEN_BLOCK в screens.js.
+function tokenField(field, ...args) {
+  if (!tokenBlock) return "";
+
+  const value = tokenBlock[field];
+
+  if (typeof value === "function") {
+    try {
+      return String(value(...args));
+    } catch (_) {
+      return "";
+    }
+  }
+
+  return typeof value === "string" ? value : "";
 }
 
 /// Причина неудачи словами (`reason`) и подсказка по ней (`hint`).
@@ -602,10 +645,17 @@ function applyActions(view) {
   // списание может кто угодно (о. 12) — свойство pull-модели, ради показа
   // которого посторонний адрес в стенде и заведен. Сузить здесь до
   // подписчика значило бы спрятать главное.
+  // Поднятие разрешения (о. 63) от экрана не зависит: блок токена виден
+  // всегда, потому что баланс и разрешение — состояние счета подписчика,
+  // а не состояние подписки. Доступно только подписчику: `approve`
+  // вызывает владелец счета, чужое разрешение поднять нельзя.
+  visible.approve = true;
+
   const enabled = {
     subscribe: visible.subscribe && bySubscriber,
     charge: visible.charge,
     cancel: visible.cancel && bySubscriber,
+    approve: bySubscriber,
   };
 
   const screenAction = screenField(screenId, "actionLabel");
@@ -614,6 +664,7 @@ function applyActions(view) {
     subscribe: screenAction,
     charge: screenAction,
     cancel: actionLabels ? actionLabels.cancel : "",
+    approve: tokenField("actionLabel"),
   };
 
   for (const node of $$("[data-action]")) {
@@ -632,6 +683,10 @@ function applyActions(view) {
   // аккаунту и зачем остальные аккаунты вообще нужны.
   const blocked = (visible.subscribe && !enabled.subscribe) || (visible.cancel && !enabled.cancel);
   setField("actionNote", blocked && actionNotes ? actionNotes.otherAccount : "");
+
+  // Своя строка у блока токена: причина там другая — разрешение выдает
+  // владелец счета, а не «стенд выдал баланс только подписчику».
+  setField("tokenNote", enabled.approve ? tokenField("text") : tokenField("otherAccount"));
 }
 
 /// Выбран ли аккаунт подписчика. Оформление и отмена доступны только ему.
@@ -680,14 +735,24 @@ function formatTime(seconds) {
 
 /// Чтение всего, что нужно экрану, одним заходом.
 async function readView(subscriber) {
-  const [record, debt, hasAccess, now] = await Promise.all([
+  const [record, debt, hasAccess, now, balance, allowance] = await Promise.all([
     readRecord(subscriber),
     readDebtPeriods(subscriber),
     readHasAccess(subscriber),
     readBlockTimestamp(),
+    readBalance(subscriber),
+    readAllowance(subscriber),
   ]);
 
-  return { record, debt, hasAccess, now, screen: pickScreen(record, hasAccess) };
+  return {
+    record,
+    debt,
+    hasAccess,
+    now,
+    balance,
+    allowance,
+    screen: pickScreen(record, hasAccess),
+  };
 }
 
 function render(view) {
@@ -772,6 +837,17 @@ function render(view) {
     setField("hint", "");
   }
 
+  // Блок токена подписчика (о. 63). Баланс и разрешение показываются
+  // всегда и всегда по подписчику: это состояние того счета, с которого
+  // идут списания, независимо от того, чей адрес выбран для отправки.
+  setField("tokenBalanceLabel", tokenField("balanceLabel"));
+  setField("tokenAllowanceLabel", tokenField("allowanceLabel"));
+  setField("tokenTitle", tokenField("title"));
+  setField("tokenBalance", tokenField("amount", view.balance, cfg.TOKEN_SYMBOL));
+  setField("tokenAllowance", tokenField("amount", view.allowance, cfg.TOKEN_SYMBOL));
+  setField("tokenBalancePeriods", tokenField("periods", view.balance, cfg.PERIOD_PRICE));
+  setField("tokenAllowancePeriods", tokenField("periods", view.allowance, cfg.PERIOD_PRICE));
+
   applyActions(view);
 }
 
@@ -790,14 +866,14 @@ function render(view) {
 /// квитанции. Вызовы, которые контракт считает успешной работой — прекращение
 /// по предельной просрочке и зафиксированная неудачная попытка, — через
 /// предварительную проверку проходят и уходят в цепочку как положено.
-async function sendCall(data, label) {
+async function sendCall(to, data, label) {
   const from = selectedAccount.address;
 
   setBusy(true);
   setStatus(`${label}: проверяем вызов…`);
 
   try {
-    await ethCall(cfg.SUBSCRIPTION_ADDRESS, data, from);
+    await ethCall(to, data, from);
   } catch (error) {
     setBusy(false);
     setStatus(`${label} не проходит. ${revertText(error)}`);
@@ -806,7 +882,7 @@ async function sendCall(data, label) {
 
   try {
     setStatus(`${label}: отправляем транзакцию…`);
-    const hash = await rpc("eth_sendTransaction", [{ from, to: cfg.SUBSCRIPTION_ADDRESS, data }]);
+    const hash = await rpc("eth_sendTransaction", [{ from, to, data }]);
 
     setStatus(`${label}: ждем блок…`);
     const receipt = await waitForReceipt(hash);
@@ -850,7 +926,7 @@ async function waitForReceipt(hash) {
 /// Оформление подписки от имени выбранного аккаунта. Оформление и первое
 /// списание — один вызов (раздел 8).
 export async function subscribe() {
-  return sendCall(SEL_SUBSCRIBE, "Оформление подписки");
+  return sendCall(cfg.SUBSCRIPTION_ADDRESS, SEL_SUBSCRIBE, "Оформление подписки");
 }
 
 /// Списание одного периода. Адрес подписки — тот, состояние которого показано
@@ -859,13 +935,30 @@ export async function subscribe() {
 /// затем, чтобы его показать (раздел 10).
 export async function charge(subscriber) {
   const target = subscriber || cfg.SUBSCRIBER_ADDRESS;
-  return sendCall(callData(SEL_CHARGE, target), "Списание периода");
+  return sendCall(cfg.SUBSCRIPTION_ADDRESS, callData(SEL_CHARGE, target), "Списание периода");
 }
 
 /// Отмена подписки. Отменить может только сам подписчик, поэтому вызов уходит
 /// от имени выбранного аккаунта, а не по чужому адресу.
 export async function cancel() {
-  return sendCall(SEL_CANCEL, "Отмена подписки");
+  return sendCall(cfg.SUBSCRIPTION_ADDRESS, SEL_CANCEL, "Отмена подписки");
+}
+
+/// Поднятие разрешения на фиксированную величину (о. 63).
+///
+/// Прибавляет к ТЕКУЩЕМУ разрешению, а не заменяет его: «еще 5 периодов»
+/// значит именно еще. Величина фиксированная, ввода суммы на витрине нет —
+/// он остается нецелью (раздел 15).
+///
+/// Вызов уходит в токен, а не в контракт подписки: `approve` — действие
+/// пользователя в его собственном токене. Отправитель — выбранный аккаунт,
+/// и кнопка доступна только подписчику: чужое разрешение поднять нельзя.
+export async function approve() {
+  const current = lastView ? lastView.allowance : 0n;
+  const target = current + cfg.APPROVE_PERIODS * cfg.PERIOD_PRICE;
+  const data = SEL_APPROVE + encodeAddress(cfg.SUBSCRIPTION_ADDRESS) + target.toString(16).padStart(64, "0");
+
+  return sendCall(cfg.MOCK_USDT_ADDRESS, data, "Поднятие разрешения");
 }
 
 /// Смена выбранного аккаунта: меняется и просмотр, и отправитель транзакций.
@@ -937,6 +1030,7 @@ export async function init() {
       if (action === "subscribe") subscribe();
       else if (action === "charge") charge(cfg.SUBSCRIBER_ADDRESS);
       else if (action === "cancel") cancel();
+      else if (action === "approve") approve();
     });
   }
 

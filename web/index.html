@@ -44,11 +44,20 @@
       periodsPaid  сколько периодов оплачено
       status       строка результата последнего действия или ошибки
       actionNote   почему часть действий недоступна выбранному аккаунту
+      tokenTitle            заголовок блока токена подписчика (о. 63)
+      tokenBalanceLabel     подпись «Баланс»
+      tokenBalance          баланс подписчика
+      tokenBalancePeriods   он же в периодах
+      tokenAllowanceLabel   подпись «Разрешено списывать»
+      tokenAllowance        текущее разрешение
+      tokenAllowancePeriods оно же в периодах
+      tokenNote             зачем нужен блок либо почему кнопка погашена
 
   * Видимость блоков — атрибут data-screens со списком экранов через
     пробел. app.js ставит и снимает стандартный атрибут hidden.
 
-  * Кнопки — атрибут data-action: subscribe, charge, cancel. app.js сам
+  * Кнопки — атрибут data-action: subscribe, charge, cancel, approve.
+    approve живет в блоке токена и от экрана не зависит. app.js сам
     вешает обработчики, сам подставляет подпись из actionLabel текущего
     экрана и сам решает, что показать и что погасить. Видимость (hidden)
     задается экраном раздела 10, активность (disabled) — выбранным
@@ -340,6 +349,61 @@
 
   .action-note:empty { display: none; }
 
+  /* ---------- токен подписчика (о. 63) ----------
+     Отдельный блок, а не четвертая кнопка в ряду действий подписки:
+     approve — действие пользователя в его собственном токене, а не
+     функция контракта подписки, и это должно быть видно. */
+
+  .token {
+    margin-top: 22px;
+    padding-top: 20px;
+    border-top: 1px solid var(--line);
+  }
+
+  .token__title {
+    margin: 0 0 14px;
+    color: var(--text-faint);
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .token__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 16px 24px;
+    margin-bottom: 18px;
+  }
+
+  .token__key {
+    margin: 0;
+    color: var(--text-faint);
+    font-size: 12px;
+  }
+
+  .token__value {
+    margin: 3px 0 0;
+    font-family: var(--mono);
+    font-size: 17px;
+    color: var(--text);
+  }
+
+  .token__periods {
+    margin: 2px 0 0;
+    color: var(--text-faint);
+    font-size: 12px;
+  }
+
+  .token__note {
+    margin: 14px 0 0;
+    max-width: 62ch;
+    color: var(--text-dim);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  .token__note:empty { display: none; }
+
   /* ---------- факт минуты ---------- */
 
   .fact {
@@ -535,6 +599,31 @@
       <p class="action-note" data-field="actionNote"></p>
 
       <p class="action-status" data-field="status"></p>
+
+      <!-- Блок токена подписчика (о. 63, раздел 10). Отдельно от действий
+           подписки: approve идет в токен, а не в контракт подписки. -->
+      <div class="token">
+        <h3 class="token__title" data-field="tokenTitle">Токен подписчика</h3>
+
+        <div class="token__grid">
+          <div>
+            <p class="token__key" data-field="tokenBalanceLabel">Баланс</p>
+            <p class="token__value" data-field="tokenBalance">10 mUSDT</p>
+            <p class="token__periods" data-field="tokenBalancePeriods">10 периодов</p>
+          </div>
+          <div>
+            <p class="token__key" data-field="tokenAllowanceLabel">Разрешено списывать</p>
+            <p class="token__value" data-field="tokenAllowance">5 mUSDT</p>
+            <p class="token__periods" data-field="tokenAllowancePeriods">5 периодов</p>
+          </div>
+        </div>
+
+        <button class="btn" type="button" data-action="approve">
+          Разрешить еще 5 периодов
+        </button>
+
+        <p class="token__note" data-field="tokenNote"></p>
+      </div>
     </section>
 
     <!-- Факт минуты — смысловой центр страницы -->
