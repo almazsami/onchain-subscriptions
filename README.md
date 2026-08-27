@@ -1,3 +1,5 @@
+[![CI](https://github.com/almazsami/onchain-subscriptions/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/almazsami/onchain-subscriptions/actions/workflows/test.yml?query=branch%3Amain)
+
 # Ончейн-подписки: стенд «Минута»
 
 Учебный стенд рекуррентных платежей на локальном EVM — подписка списывается
