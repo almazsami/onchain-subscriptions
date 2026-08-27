@@ -1,66 +1,167 @@
-## Foundry
+# Ончейн-подписки: стенд «Минута»
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+Учебный стенд рекуррентных платежей на локальном EVM — подписка списывается
+раз в минуту по pull-модели через `approve` — и исследование о том, как это
+устроено у живых сервисов. Тема своя, а не из списка вариантов, потому что
+рекуррентные платежи через смарт-контракты — задача, с которой я работаю,
+и спорить с агентом по существу получается только на своей задаче.
+Формат сдачи — соло.
 
-Foundry consists of:
+## Что где лежит
 
-- **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
-- **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
-- **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
-- **Chisel**: Fast, utilitarian, and verbose solidity REPL.
+| Что | Где |
+|---|---|
+| PDF исследования | [docs/research.pdf](docs/research.pdf) — 14 страниц |
+| Workflow | [.claude/skills/spec-from-answers/SKILL.md](.claude/skills/spec-from-answers/SKILL.md) |
+| Замер: последовательно против параллельно | [evidence/measurement.md](evidence/measurement.md) |
+| Спецификация | [SPEC.md](SPEC.md) |
+| Файл ответов, по которому написана спецификация | [SPEC-ANSWERS.md](SPEC-ANSWERS.md) |
+| Полное исследование | [research/RESEARCH.md](research/RESEARCH.md) |
+| Сжатое исследование | [research/RESEARCH-BRIEF.md](research/RESEARCH-BRIEF.md) |
+| Журналы сессий | [sessions/](sessions/) |
+| Свидетельства: скриншоты, вывод тестов, замер | [evidence/](evidence/) |
+| Отчет | [REPORT.md](REPORT.md) — файл появится позже |
+| Правила работы над проектом | [AGENTS.md](AGENTS.md) |
 
-## Documentation
+## Как запустить
 
-https://book.getfoundry.sh/
+Клонировать **обязательно с подмодулями** — `forge-std` и
+`openzeppelin-contracts` подключены как submodules, без них тесты
+не соберутся:
 
-## Usage
-
-### Build
-
-```shell
-$ forge build
+```
+git clone --recurse-submodules git@github.com:almazsami/onchain-subscriptions.git
+cd onchain-subscriptions
 ```
 
-### Test
+Если репозиторий уже склонирован без флага:
 
-```shell
-$ forge test
+```
+git submodule update --init --recursive
 ```
 
-### Format
+Дальше три терминала.
 
-```shell
-$ forge fmt
+**Терминал 1 — узел.** Блок раз в секунду, чтобы минутный период был виден
+без ожидания подтверждений:
+
+```
+anvil --block-time 1
 ```
 
-### Gas Snapshots
+**Терминал 2 — развертывание.** Скрипт разворачивает токен и контракт
+подписки, выдает подписчику 10 токенов и разрешение на 5 периодов.
+Подписку скрипт не оформляет намеренно — это первое действие руками:
 
-```shell
-$ forge snapshot
+```
+forge script script/Deploy.s.sol --rpc-url http://127.0.0.1:8545 --broadcast
 ```
 
-### Anvil
+Скрипт печатает блок «Контракты (перенести в web/config.js)». На чистом
+anvil адреса всегда одни и те же и уже проставлены в
+[web/config.js](web/config.js) — переносить руками нужно, только если узел
+до этого что-то видел.
 
-```shell
-$ anvil
+**Терминал 3 — статика.** Витрина — один HTML без сборщиков, CDN
+и сторонних библиотек, поэтому достаточно любого статического сервера
+из корня репозитория:
+
+```
+python3 -m http.server 8000
 ```
 
-### Deploy
+**Адрес витрины:** http://127.0.0.1:8000/web/index.html
 
-```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
+### Тесты
+
+```
+forge test
 ```
 
-### Cast
+Должно вывестись `24 passed; 0 failed; 0 skipped`: по тесту на каждое
+контрольное значение раздела 12 спецификации и по тесту на каждый
+обязательный сценарий раздела 13. Сохраненный вывод —
+[evidence/forge-test.txt](evidence/forge-test.txt).
 
-```shell
-$ cast <subcommand>
+## Пятиминутный сценарий
+
+Период — одна минута, поэтому каждый шаг либо ждет минуту, либо двигает
+часы узла вперед:
+
+```
+cast rpc evm_increaseTime 60 --rpc-url http://127.0.0.1:8545 && cast rpc evm_mine --rpc-url http://127.0.0.1:8545
 ```
 
-### Help
+Витрина перечитывает состояние сама раз в две секунды — обновлять страницу
+не нужно.
 
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
-```
+1. **Оформить подписку.** Аккаунт «Подписчик», кнопка «Оформить подписку».
+   Экран «Доступ открыт», под ним факт минуты; в блоке «Токен подписчика»
+   баланс 10 → 9, разрешение 5 → 4 периода. Оформление и первое списание —
+   один вызов.
+2. **Дождаться истечения периода.** Ничего не нажимать минуту. Экран сам
+   меняется на «Погашение долга»: «Осталось догнать 1 период», факт минуты
+   пропал. Доступ кончился без единого действия человека — это и есть смысл
+   стенда.
+3. **Погасить долг.** Кнопка «Списать за период». Снова «Доступ открыт»,
+   новый факт минуты, баланс и разрешение уменьшились еще на период.
+4. **Списать посторонним аккаунтом.** Переключить аккаунт на «Посторонний»,
+   дождаться истечения периода и нажать «Списать за период» — списание
+   проходит от чужого адреса. В pull-модели дернуть платеж может кто угодно,
+   деньги все равно уходят подписчика получателю. Повторять до шестого
+   списания: стартового разрешения хватает на пять периодов, и на шестом
+   появляется экран «Подписка просрочена» с причиной «Не хватает разрешения».
+5. **Поднять разрешение.** Вернуться на «Подписчик» — кнопка «Разрешить еще
+   5 периодов» доступна только владельцу счета. После нее «Повторить
+   списание» проходит, экран возвращается к «Доступ открыт».
+6. **Довести до нехватки баланса.** Продолжать списания до десятого:
+   стартовый баланс — ровно 10 периодов. После него у подписчика ноль,
+   у получателя 10 токенов, следующее списание дает экран «Подписка
+   просрочена» с причиной «Не хватает баланса». Два сбоя приходят сами
+   и в разном порядке — разрешение кончается раньше баланса.
+7. **Отменить подписку.** Кнопка «Отменить подписку» от подписчика. Если
+   оплаченный период еще не истек, на экране «Доступ открыт» появляется
+   плашка «доступ сохраняется до конца оплаченного периода»; после
+   истечения — экран «Подписка отменена». Отмена терминальна: вернуться
+   можно только новой подпиской.
+
+Полный прогон без перемотки времени занял 602 секунды и записан
+в [sessions/session-4.md](sessions/session-4.md); снимки экранов на момент
+ручной проверки — в [evidence/](evidence/).
+
+## Обязательные пункты задания
+
+| Пункт | Где выполнен |
+|---|---|
+| Работающий результат | Контракты [src/Subscription.sol](src/Subscription.sol), [src/MockUSDT.sol](src/MockUSDT.sol), 24 теста [test/SubscriptionTest.t.sol](test/SubscriptionTest.t.sol), развертывание [script/Deploy.s.sol](script/Deploy.s.sol), витрина [web/index.html](web/index.html). Живой прогон целиком — [sessions/session-4.md](sessions/session-4.md) |
+| Субагенты | Четыре субагента параллельно на четырех блоках исследования: [research/providers.md](research/providers.md), [research/allowance.md](research/allowance.md), [research/trigger.md](research/trigger.md), [research/failures.md](research/failures.md). Тот же материал последовательно — [research/seq-01-providers.md](research/seq-01-providers.md) и далее. Замер обоих прогонов — [evidence/measurement.md](evidence/measurement.md), снимок запуска — [evidence/subagents-running.png](evidence/subagents-running.png) |
+| Workflow | Скилл [.claude/skills/spec-from-answers/SKILL.md](.claude/skills/spec-from-answers/SKILL.md): вопросы → дословный файл ответов → спецификация со ссылками на номера ответов. Применен к этому проекту: [SPEC-ANSWERS.md](SPEC-ANSWERS.md) → [SPEC.md](SPEC.md) |
+| PDF | [docs/research.pdf](docs/research.pdf), 14 страниц; сборка из [docs/research.html](docs/research.html) без сетевых вызовов |
+
+Витрина собрана тремя агентами параллельно в трех git worktrees на ветках
+[feat/shell](https://github.com/almazsami/onchain-subscriptions/tree/feat/shell)
+(каркас и стили),
+[feat/state](https://github.com/almazsami/onchain-subscriptions/tree/feat/state)
+(логика и конфигурация) и
+[feat/screens](https://github.com/almazsami/onchain-subscriptions/tree/feat/screens)
+(тексты экранов и факты); все три слиты в `main` через `--no-ff`, история
+слияния сохранена.
+
+## Что не сделано и почему
+
+- **[REPORT.md](REPORT.md) не написан** — пишется последним, заготовки
+  в [REPORT-NOTES.md](REPORT-NOTES.md).
+- **Витрина не покрыта автотестами.** Проверялась живым прогоном на
+  развернутом стенде; автоматизированы только контракты.
+- **Нет автоматического исполнителя** (кипера, крона, бота): списание
+  вызывается руками с витрины. Шедулер — нецель, и без него видно главное:
+  доступ кончается сам, а деньги — нет.
+- **Нет кошельков, тестнетов и сетевых вызовов наружу.** Только локальный
+  anvil и его дефолтные ключи; транзакции подписывает узел.
+- **Один тариф, один токен, одна сеть, без трайла, промокодов, апгрейда
+  и перерасчета при отмене** — полный список нецелей в
+  [AGENTS.md](AGENTS.md). Все, что просилось сверх спецификации, уходило
+  туда, а не в код.
+- **По одному блоку параллельного исследования нет счетчиков**: субагент
+  упал на лимите сессии сразу после записи файла — файл полный, резюме
+  не пришло. Отмечено в [evidence/measurement.md](evidence/measurement.md).
