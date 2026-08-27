@@ -1,0 +1,18 @@
+{
+  "//": "Файл оставлен в репозитории намеренно, как часть свидетельства к отчету об изоляции (evidence/isolation/RESULT.md): проверяющий должен видеть, какое правило deny стояло в момент получения отказов. В .gitignore не добавлять.",
+  "permissions": {
+    "deny": [
+      "Read(~/.ssh/**)",
+      "Read(//Users/almazsamigullin/.ssh/**)",
+      "Bash(cat ~/.ssh/*)",
+      "Bash(less ~/.ssh/*)",
+      "Bash(head ~/.ssh/*)",
+      "Bash(tail ~/.ssh/*)",
+      "Bash(cat /Users/almazsamigullin/.ssh/*)",
+      "Bash(less /Users/almazsamigullin/.ssh/*)",
+      "Bash(head /Users/almazsamigullin/.ssh/*)",
+      "Bash(tail /Users/almazsamigullin/.ssh/*)",
+      "WebFetch"
+    ]
+  }
+}
