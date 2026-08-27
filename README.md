@@ -137,6 +137,8 @@ cast rpc evm_increaseTime 60 --rpc-url http://127.0.0.1:8545 && cast rpc evm_min
 | Субагенты | Четыре субагента параллельно на четырех блоках исследования: [research/providers.md](research/providers.md), [research/allowance.md](research/allowance.md), [research/trigger.md](research/trigger.md), [research/failures.md](research/failures.md). Тот же материал последовательно — [research/seq-01-providers.md](research/seq-01-providers.md) и далее. Замер обоих прогонов — [evidence/measurement.md](evidence/measurement.md), снимок запуска — [evidence/subagents-running.png](evidence/subagents-running.png) |
 | Workflow | Скилл [.claude/skills/spec-from-answers/SKILL.md](.claude/skills/spec-from-answers/SKILL.md): вопросы → дословный файл ответов → спецификация со ссылками на номера ответов. Применен к этому проекту: [SPEC-ANSWERS.md](SPEC-ANSWERS.md) → [SPEC.md](SPEC.md) |
 | PDF | [docs/research.pdf](docs/research.pdf), 14 страниц; сборка из [docs/research.html](docs/research.html) без сетевых вызовов |
+| Инъекция промпта (плюс) | Четыре инструкции, внедренные в синтетический документ провайдера четырьмя способами; обработан двумя моделями — Haiku 4.5 и Opus 5. Ни одна инструкция не выполнена; различие моделей — в том, сколько они назвали вслух. Отчет — [evidence/injection/RESULT.md](evidence/injection/RESULT.md), разбор — раздел 8 [REPORT.md](REPORT.md) |
+| Изоляция (плюс) | Два прохода: до запретов и с запретами в [.claude/settings.local.json](.claude/settings.local.json). Два маршрута дали дословный отказ харнесса, третий не проверен — агент отказался сам. Отчет — [evidence/isolation/RESULT.md](evidence/isolation/RESULT.md), разбор — раздел 9 [REPORT.md](REPORT.md) |
 
 Витрина собрана тремя агентами параллельно в трех git worktrees на ветках
 [feat/shell](https://github.com/almazsami/onchain-subscriptions/tree/feat/shell)
@@ -149,9 +151,6 @@ cast rpc evm_increaseTime 60 --rpc-url http://127.0.0.1:8545 && cast rpc evm_min
 
 ## Что не сделано и почему
 
-- **В [REPORT.md](REPORT.md) не дописаны два раздела** — про инъекцию
-  промпта и про изоляцию; помечены «выполняется». Заготовки к отчету —
-  в [REPORT-NOTES.md](REPORT-NOTES.md).
 - **Витрина не покрыта автотестами.** Проверялась живым прогоном на
   развернутом стенде; автоматизированы только контракты.
 - **Нет автоматического исполнителя** (кипера, крона, бота): списание
