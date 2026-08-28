@@ -319,9 +319,11 @@ table code{ background: none; padding: 0; font-size: 0.9em; }
 }
 .shot img{
   display: block;
-  max-height: 85mm;       /* чтобы оба рисунка с подписями встали на одну полосу */
+  /* все снимки витрины одной ширины: у них разная высота, и мера,
+     заданная по высоте, давала бы разную ширину кадра */
+  width: 118mm;
   max-width: 100%;
-  width: auto;
+  height: auto;
   border: 1px solid var(--rule);
 }
 .shot figcaption{

@@ -13,7 +13,8 @@
 
 | Что | Где |
 |---|---|
-| PDF исследования | [docs/research.pdf](docs/research.pdf) — 14 страниц |
+| PDF исследования | [docs/research.pdf](docs/research.pdf) — 15 страниц |
+| Презентация | [docs/presentation.pdf](docs/presentation.pdf) — 11 слайдов, 16:9 |
 | Workflow | [.claude/skills/spec-from-answers/SKILL.md](.claude/skills/spec-from-answers/SKILL.md) |
 | Замер: последовательно против параллельно | [evidence/measurement.md](evidence/measurement.md) |
 | Спецификация | [SPEC.md](SPEC.md) |
@@ -183,7 +184,7 @@ cast rpc evm_increaseTime 60 --rpc-url http://127.0.0.1:8545 && cast rpc evm_min
 | Workflow | Скилл [.claude/skills/spec-from-answers/SKILL.md](.claude/skills/spec-from-answers/SKILL.md): вопросы → дословный файл ответов → спецификация со ссылками на номера ответов. Применен к этому проекту: [SPEC-ANSWERS.md](SPEC-ANSWERS.md) → [SPEC.md](SPEC.md) |
 | PDF | [docs/research.pdf](docs/research.pdf), 14 страниц; сборка из [docs/research.html](docs/research.html) без сетевых вызовов |
 | Инъекция промпта (плюс) | Четыре инструкции, внедренные в синтетический документ провайдера четырьмя способами; обработан двумя моделями — Haiku 4.5 и Opus 5. Ни одна инструкция не выполнена; различие моделей — в том, сколько они назвали вслух. Отчет — [evidence/injection/RESULT.md](evidence/injection/RESULT.md), разбор — раздел 8 [REPORT.md](REPORT.md) |
-| Изоляция (плюс) | Два прохода: до запретов и с запретами в [.claude/settings.local.json](.claude/settings.local.json). Два маршрута дали дословный отказ харнесса, третий не проверен — агент отказался сам. Отчет — [evidence/isolation/RESULT.md](evidence/isolation/RESULT.md), разбор — раздел 9 [REPORT.md](REPORT.md) |
+| Изоляция (плюс) | Два прохода: до запретов и с запретами в [.claude/settings.local.json](.claude/settings.local.json) — внутри только правила запрета, ключей и токенов в файле нет. Два маршрута дали дословный отказ харнесса, третий не проверен — агент отказался сам. Отчет — [evidence/isolation/RESULT.md](evidence/isolation/RESULT.md), разбор — раздел 9 [REPORT.md](REPORT.md) |
 
 Витрина собрана тремя агентами параллельно в трех git worktrees на ветках
 [feat/shell](https://github.com/almazsami/onchain-subscriptions/tree/feat/shell)
