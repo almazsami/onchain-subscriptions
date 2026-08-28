@@ -22,6 +22,7 @@
 | Полное исследование | [research/RESEARCH.md](research/RESEARCH.md) |
 | Сжатое исследование | [research/RESEARCH-BRIEF.md](research/RESEARCH-BRIEF.md) |
 | Журналы сессий | [sessions/](sessions/) |
+| Промпты, которыми велась работа | [sessions/PROMPTS.md](sessions/PROMPTS.md) |
 | Свидетельства: скриншоты, вывод тестов, замер | [evidence/](evidence/) |
 | Отчет | [REPORT.md](REPORT.md) |
 | Правила работы над проектом | [AGENTS.md](AGENTS.md) |
